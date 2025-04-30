@@ -22,6 +22,14 @@ const KratosConsole = {
   },
   error: (...args: any[]) => {
     console.error(`[${formatTimestamp()}]`, ...args)
+  },
+  group: (label: string, callback: () => void) => {
+    console.groupCollapsed(`[${formatTimestamp()}] ${label}`)
+    try {
+      callback()
+    } finally {
+      console.groupEnd()
+    }
   }
 }
 
@@ -231,42 +239,45 @@ type ResponseMiddleware<T = any> = (response: Response) => Promise<T>
 // Debug logging middleware
 const debugLoggingMiddleware = {
   request: (): RequestMiddleware => (url, options) => {
-    console.groupCollapsed(`Kratos API Request: ${options.method || 'GET'} ${url}`)
-    console.log('Request Headers:', options.headers)
-    if (options.body) {
-      try {
-        console.log('Request Payload:', JSON.parse(options.body as string))
-      } catch {
-        console.log('Request Payload:', options.body)
+    KratosConsole.group(`Kratos API Request: ${options.method || 'GET'} ${url}`, () => {
+      KratosConsole.log('Request Headers:', options.headers)
+      if (options.body) {
+        try {
+          KratosConsole.log('Request Payload:', JSON.parse(options.body as string))
+        } catch {
+          KratosConsole.log('Request Payload:', options.body)
+        }
       }
-    }
-    console.groupEnd()
+    })
     return [url, options]
   },
   response: <T>(): ResponseMiddleware<T> => async (response) => {
     const clone = response.clone()
     const clientCorrelationId = response.headers.get('X-Correlation-ID') || 'none'
     const serverCorrelationId = response.headers.get('Set-Correlation-ID') || 'none'
-    console.groupCollapsed(`Kratos API Response: ${response.status} ${response.url}`)
-    console.log('Client Correlation ID (X-Correlation-ID):', clientCorrelationId)
-    console.log('Server Correlation ID (Set-Correlation-ID):', serverCorrelationId)
-    console.log('Response Headers:', Object.fromEntries(clone.headers.entries()))
-    try {
-      const data = await clone.json()
-      console.log('Response Payload:', data)
-      console.groupEnd()
-      return {
-        ...data,
-        _metadata: {
-          correlationId: serverCorrelationId,
-          requestId: clientCorrelationId,
-          headers: Object.fromEntries(response.headers.entries())
-        }
+    
+    let responseData: T
+    await KratosConsole.group(`Kratos API Response: ${response.status} ${response.url}`, async () => {
+      KratosConsole.log('Client Correlation ID (X-Correlation-ID):', clientCorrelationId)
+      KratosConsole.log('Server Correlation ID (Set-Correlation-ID):', serverCorrelationId)
+      KratosConsole.log('Response Headers:', Object.fromEntries(clone.headers.entries()))
+      
+      try {
+        responseData = await clone.json()
+        KratosConsole.log('Response Payload:', responseData)
+      } catch (err) {
+        KratosConsole.log('Response Payload: [non-JSON]', await clone.text())
+        throw err
       }
-    } catch (err) {
-      console.log('Response Payload: [non-JSON]', await clone.text())
-      console.groupEnd()
-      throw err
+    })
+
+    return {
+      ...responseData!,
+      _metadata: {
+        correlationId: serverCorrelationId,
+        requestId: clientCorrelationId,
+        headers: Object.fromEntries(response.headers.entries())
+      }
     }
   }
 }
@@ -404,10 +415,10 @@ export async function submitLogin(flowId: string, body: any, debug = false): Pro
 async function parseKratosError(response: Response): Promise<KratosError> {
   try {
     const error = await response.json()
-    console.groupCollapsed(`Kratos API Error: ${response.status} ${response.url}`)
-    console.log('Error Response:', error)
-    console.log('Response Headers:', Object.fromEntries(response.headers.entries()))
-    console.groupEnd()
+    KratosConsole.group(`Kratos API Error: ${response.status} ${response.url}`, () => {
+      KratosConsole.log('Error Response:', error)
+      KratosConsole.log('Response Headers:', Object.fromEntries(response.headers.entries()))
+    })
     return {
       error: {
         code: response.status,
