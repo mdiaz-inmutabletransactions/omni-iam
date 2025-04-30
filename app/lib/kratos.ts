@@ -3,17 +3,39 @@ const KRATOS_BASE_URL = process.env.KRATOS_PUBLIC_URL || 'http://localhost:4433'
 const TIMEZONE = process.env.KRATOS_TIMEZONE || 'UTC'
 const LOCALE = process.env.LOCALE || 'en-US'
 
+
+import { DateTime } from 'luxon';
+
+function validateEnv() {
+  // Validate and correct time zone
+  const rawOffset = process.env.KRATOS_TIMEZONE || 'UTC';
+  const match = rawOffset.match(/^UTC([+-])(\d{1,2})(?::(\d{2}))?$/);
+  if (!match) {
+    console.warn(`[WARN] Invalid timezone format: "${rawOffset}" — falling back to "UTC"`);
+    process.env.KRATOS_TIMEZONE = 'UTC';
+  } else {
+    let [, sign, hours, minutes = '00'] = match;
+    hours = hours.padStart(2, '0');
+    process.env.KRATOS_TIMEZONE = `UTC${sign}${hours}:${minutes}`;
+  }
+
+  // Validate and correct locale
+  const rawLocale = process.env.LOCALE || 'en-US';
+  const isLocaleValid = Intl.DateTimeFormat.supportedLocalesOf(rawLocale).length > 0;
+  if (!isLocaleValid) {
+    console.warn(`[WARN] Invalid locale: "${rawLocale}" — falling back to "en-US"`);
+    process.env.LOCALE = 'en-US';
+  }
+}
+
+// Run validation once at app startup
+validateEnv();
+
 function formatTimestamp(): string {
-  return new Date().toLocaleString(LOCALE, { 
-    timeZone: TIMEZONE,
-    hour12: false,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit'
-  })
+  const offset = process.env.KRATOS_TIMEZONE || 'UTC';
+  const locale = process.env.LOCALE || 'en-US';
+  const dt = DateTime.utc().setZone(offset).setLocale(locale);
+  return dt.toLocaleString(DateTime.DATETIME_FULL);
 }
 
 const KratosConsole = {
