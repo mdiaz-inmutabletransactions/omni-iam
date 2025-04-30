@@ -2,7 +2,9 @@
 
 ## Introduction
 
-KratosFetch is a modern, lightweight API wrapper for Ory Kratos built on the Fetch API. It provides a clean, middleware-based architecture for interacting with Kratos' identity management services while offering flexible logging and monitoring capabilities.
+KratosFetch is a modern, lightweight server-side API wrapper for Ory Kratos. It provides a clean, middleware-based architecture for interacting with Kratos' identity management services while offering flexible logging and monitoring capabilities. 
+
+Important: This is a server-side library and should not be used in browser environments.
 
 ## Key Features
 
@@ -49,6 +51,8 @@ graph TD
 
 ```bash
 npm install @ory/kratos-client kratos-fetch
+# or
+pnpm add @ory/kratos-client kratos-fetch
 ```
 
 ## Basic Usage
@@ -140,10 +144,12 @@ All errors follow the format:
 
 ## Logging
 
-KratosFetch provides timestamped logging through the `KratosConsole` utility which automatically:
+KratosFetch provides server-side timestamped logging through the `KratosConsole` utility which:
+- Uses Node.js crypto module for secure operations
 - Formats timestamps according to configured timezone (KRATOS_TIMEZONE)
 - Uses the specified locale (LOCALE) for date formatting
 - Includes consistent log prefixes
+- Is optimized for server environments
 
 ### Configuration
 ```typescript
