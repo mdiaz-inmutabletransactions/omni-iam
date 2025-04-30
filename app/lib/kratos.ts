@@ -1,5 +1,29 @@
 // Ory Kratos API utilities for Remix
 const KRATOS_BASE_URL = process.env.KRATOS_PUBLIC_URL || 'http://localhost:4433'
+const TIMEZONE = process.env.KRATOS_TIMEZONE || 'UTC'
+const LOCALE = process.env.LOCALE || 'en-US'
+
+function formatTimestamp(): string {
+  return new Date().toLocaleString(LOCALE, { 
+    timeZone: TIMEZONE,
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  })
+}
+
+const KratosConsole = {
+  log: (...args: any[]) => {
+    console.log(`[${formatTimestamp()}]`, ...args)
+  },
+  error: (...args: any[]) => {
+    console.error(`[${formatTimestamp()}]`, ...args)
+  }
+}
 
 // Telemetry configuration
 interface TelemetryConfig {
@@ -36,7 +60,7 @@ function checkCircuitBreaker(): boolean {
   
   if (circuitBreaker.state === 'open') {
     if (now - circuitBreaker.lastFailure > CIRCUIT_BREAKER_RESET_TIMEOUT) {
-      console.log('[CIRCUIT BREAKER] Transitioning to half-open state')
+      KratosConsole.log('[CIRCUIT BREAKER] Transitioning to half-open state')
       circuitBreaker.state = 'half-open'
       circuitBreaker.failures = 0
       circuitBreaker.testRequestTime = now
@@ -49,7 +73,7 @@ function checkCircuitBreaker(): boolean {
     // If we already have a test request in progress
     if (circuitBreaker.testRequestTime > 0) {
       if (now - circuitBreaker.testRequestTime > 5000) {
-        console.log('[CIRCUIT BREAKER] Test request timeout, returning to open state')
+        KratosConsole.log('[CIRCUIT BREAKER] Test request timeout, returning to open state')
         circuitBreaker.state = 'open'
         circuitBreaker.lastFailure = now
         circuitBreaker.testRequestTime = 0
@@ -70,7 +94,7 @@ function updateCircuitBreaker(success: boolean): void {
   
   if (success) {
     if (circuitBreaker.state === 'half-open') {
-      console.log('[CIRCUIT BREAKER] Test request succeeded, closing circuit')
+      KratosConsole.log('[CIRCUIT BREAKER] Test request succeeded, closing circuit')
       circuitBreaker.state = 'closed'
       circuitBreaker.testRequestTime = 0
     }
@@ -80,11 +104,11 @@ function updateCircuitBreaker(success: boolean): void {
     circuitBreaker.lastFailure = now
     
     if (circuitBreaker.state === 'half-open') {
-      console.log('[CIRCUIT BREAKER] Test request failed, reopening circuit')
+      KratosConsole.log('[CIRCUIT BREAKER] Test request failed, reopening circuit')
       circuitBreaker.state = 'open'
       circuitBreaker.testRequestTime = 0
     } else if (circuitBreaker.failures >= CIRCUIT_BREAKER_THRESHOLD) {
-      console.log('[CIRCUIT BREAKER] Failure threshold reached, opening circuit')
+      KratosConsole.log('[CIRCUIT BREAKER] Failure threshold reached, opening circuit')
       circuitBreaker.state = 'open'
     }
   }
@@ -109,23 +133,23 @@ const tracer = {
     }
 
     try {
-      console.log(`[TRACE] Start ${name} (${spanId})`)
+        KratosConsole.log(`[TRACE] Start ${name} (${spanId})`)
       return {
         end: () => {
           if (spanActive) {
-            console.log(`[TRACE] End ${name} (${spanId})`)
+            KratosConsole.log(`[TRACE] End ${name} (${spanId})`)
             spanActive = false
           }
         },
         addAttribute: (key: string, value: any) => {
           if (spanActive) {
-            console.log(`[TRACE] ${name} (${spanId}) - ${key}: ${JSON.stringify(value)}`)
+            KratosConsole.log(`[TRACE] ${name} (${spanId}) - ${key}: ${JSON.stringify(value)}`)
           }
         },
         id: spanId
       }
     } catch (err) {
-      console.error('[TRACING] Failed to create span, using fallback:', err)
+      KratosConsole.error('[TRACING] Failed to create span, using fallback:', err)
       return fallbackSpan
     }
   },
@@ -133,9 +157,9 @@ const tracer = {
     if (!telemetryConfig.enabled) return
     
     try {
-      console.error('[TELEMETRY] Exception:', error)
+      KratosConsole.error('[TELEMETRY] Exception:', error)
     } catch (err) {
-      console.error('[TELEMETRY] Failed to record exception:', err)
+      KratosConsole.error('[TELEMETRY] Failed to record exception:', err)
     }
   },
   healthCheck: async () => {
