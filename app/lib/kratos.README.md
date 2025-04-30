@@ -93,6 +93,24 @@ Submits login credentials
 
 ## Configuration
 
+### Environment Variables (.env)
+```bash
+# Kratos API Settings
+KRATOS_PUBLIC_URL=http://localhost:4433
+KRATOS_TIMEOUT=5000
+KRATOS_RETRY_DELAY=1000
+KRATOS_LOG_LEVEL=debug
+
+# Logging Configuration
+KRATOS_TIMEZONE=UTC-6  # Timezone for log timestamps
+LOCALE=en-US           # Locale for timestamp formatting
+
+# Telemetry Settings
+TELEMETRY_ENABLED=true
+TELEMETRY_SERVICE_NAME=kratos-client
+```
+
+### TypeScript Configuration
 ```typescript
 interface KratosFetchConfig {
   baseUrl: string;
@@ -122,12 +140,32 @@ All errors follow the format:
 
 ## Logging
 
-To enable logging:
+KratosFetch provides timestamped logging through the `KratosConsole` utility which automatically:
+- Formats timestamps according to configured timezone (KRATOS_TIMEZONE)
+- Uses the specified locale (LOCALE) for date formatting
+- Includes consistent log prefixes
+
+### Configuration
 ```typescript
 new KratosFetch({
   enableLogging: true,
-  logger: console // Can be any logger interface
+  logger: KratosConsole // Uses built-in timestamped logger
 });
+
+// Or with custom logger:
+new KratosFetch({
+  enableLogging: true,
+  logger: {
+    log: (...args) => console.log(`[CUSTOM]`, ...args),
+    error: (...args) => console.error(`[CUSTOM]`, ...args)
+  }
+});
+```
+
+### Log Format
+Example log output:
+```
+[2023-01-01 12:34:56] [CIRCUIT BREAKER] Transitioning to half-open state
 ```
 
 ## Contributing
