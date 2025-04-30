@@ -111,6 +111,64 @@ Debug logging includes:
 
 Logs are organized in collapsible console groups for better readability.
 
+## Circuit Breaker
+
+The API client implements a circuit breaker pattern to prevent cascading failures. The state machine follows these transitions:
+
+```mermaid
+stateDiagram-v2
+    [*] --> Closed
+    Closed --> Open: Failure threshold reached
+    Open --> HalfOpen: Reset timeout elapsed
+    HalfOpen --> Open: Test request fails
+    HalfOpen --> Closed: Test request succeeds
+```
+
+### Configuration Parameters
+- `CIRCUIT_BREAKER_THRESHOLD`: Number of consecutive failures before opening circuit (default: 5)
+- `CIRCUIT_BREAKER_RESET_TIMEOUT`: Time in ms before attempting to close circuit (default: 30000)
+
+### State Descriptions
+- **Closed**: Normal operation - requests pass through
+- **Open**: All requests fail fast with "Service unavailable" error
+- **HalfOpen**: Allows one test request to check if service has recovered
+
+### Test Documentation
+
+#### Circuit Breaker Tests
+1. `should block requests when circuit is open`:
+   - Simulates 5 failures to trip circuit
+   - Verifies subsequent requests fail fast
+2. `should transition to half-open after timeout`:
+   - Trips circuit with failures
+   - Advances time past reset timeout
+   - Verifies circuit transitions to half-open
+   - Tests successful recovery
+
+#### API Method Tests
+1. `initLoginFlow should return flow data`:
+   - Mocks successful response
+   - Verifies flow data structure
+   - Checks metadata inclusion
+2. `initRegistrationFlow should return flow data`:
+   - Similar to login flow test
+   - Specific to registration endpoint
+3. `submitLogin should handle success`:
+   - Mocks successful authentication
+   - Verifies resolved promise
+4. `submitLogin should handle errors`:
+   - Mocks 400 error response
+   - Verifies error message propagation
+
+#### Other Tests
+1. `should include correlation headers`:
+   - Verifies tracing headers are added
+   - Checks header format
+2. `should retry on network errors`:
+   - Mocks initial network failure
+   - Verifies automatic retry
+   - Checks final success
+
 ## Configuration
 
 Set the base URL via environment variable:

@@ -8,7 +8,9 @@
     "dev": "remix vite:dev",
     "lint": "eslint --ignore-path .gitignore --cache --cache-location ./node_modules/.cache/eslint .",
     "start": "remix-serve ./build/server/index.js",
-    "typecheck": "tsc"
+    "typecheck": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest watch"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.2.0",

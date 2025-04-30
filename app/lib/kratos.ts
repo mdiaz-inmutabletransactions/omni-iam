@@ -11,12 +11,14 @@ interface TelemetryConfig {
 interface CircuitBreakerState {
   failures: number
   lastFailure: number
+  testRequestTime: number
   state: 'closed' | 'open' | 'half-open'
 }
 
-const circuitBreaker: CircuitBreakerState = {
+export const circuitBreaker: CircuitBreakerState = {
   failures: 0,
   lastFailure: 0,
+  testRequestTime: 0,
   state: 'closed'
 }
 
@@ -30,27 +32,59 @@ const telemetryConfig: TelemetryConfig = {
 }
 
 function checkCircuitBreaker(): boolean {
+  const now = Date.now()
+  
   if (circuitBreaker.state === 'open') {
-    const now = Date.now()
     if (now - circuitBreaker.lastFailure > CIRCUIT_BREAKER_RESET_TIMEOUT) {
+      console.log('[CIRCUIT BREAKER] Transitioning to half-open state')
       circuitBreaker.state = 'half-open'
-      return true
+      circuitBreaker.failures = 0
+      circuitBreaker.testRequestTime = now
+      return true // Allow one test request
     }
-    return false
+    return false // Still in open state
   }
-  return true
+  
+  if (circuitBreaker.state === 'half-open') {
+    // If we already have a test request in progress
+    if (circuitBreaker.testRequestTime > 0) {
+      if (now - circuitBreaker.testRequestTime > 5000) {
+        console.log('[CIRCUIT BREAKER] Test request timeout, returning to open state')
+        circuitBreaker.state = 'open'
+        circuitBreaker.lastFailure = now
+        circuitBreaker.testRequestTime = 0
+        return false
+      }
+      return false // Only allow one test request at a time
+    }
+    // Mark this as the test request
+    circuitBreaker.testRequestTime = now
+    return true
+  }
+  
+  return true // Closed state - allow all requests
 }
 
 function updateCircuitBreaker(success: boolean): void {
+  const now = Date.now()
+  
   if (success) {
     if (circuitBreaker.state === 'half-open') {
+      console.log('[CIRCUIT BREAKER] Test request succeeded, closing circuit')
       circuitBreaker.state = 'closed'
+      circuitBreaker.testRequestTime = 0
     }
     circuitBreaker.failures = 0
   } else {
     circuitBreaker.failures++
-    circuitBreaker.lastFailure = Date.now()
-    if (circuitBreaker.failures >= CIRCUIT_BREAKER_THRESHOLD) {
+    circuitBreaker.lastFailure = now
+    
+    if (circuitBreaker.state === 'half-open') {
+      console.log('[CIRCUIT BREAKER] Test request failed, reopening circuit')
+      circuitBreaker.state = 'open'
+      circuitBreaker.testRequestTime = 0
+    } else if (circuitBreaker.failures >= CIRCUIT_BREAKER_THRESHOLD) {
+      console.log('[CIRCUIT BREAKER] Failure threshold reached, opening circuit')
       circuitBreaker.state = 'open'
     }
   }
@@ -66,7 +100,10 @@ const tracer = {
     
     // Fallback span that still maintains basic functionality
     const fallbackSpan = {
-      end: () => { spanActive = false },
+      end: () => {
+        console.log(`[TRACE] End ${name} (${spanId}) (fallback)`)
+        spanActive = false
+      },
       addAttribute: () => {},
       id: spanId
     }
@@ -321,11 +358,22 @@ export async function initRegistrationFlow(debug = false): Promise<KratosFlow> {
 }
 
 // Submit login form
-export async function submitLogin(flowId: string, body: any, debug = false): Promise<Response> {
-  return kratosFetch(`/self-service/login?flow=${flowId}`, {
-    method: 'POST',
-    body: JSON.stringify(body)
-  }, undefined, debug)
+export async function submitLogin(flowId: string, body: any, debug = false): Promise<any> {
+  try {
+    return await kratosFetch(`/self-service/login?flow=${flowId}`, {
+      method: 'POST',
+      body: JSON.stringify(body)
+    }, undefined, debug)
+  } catch (error: unknown) {
+    if (error instanceof Error) {
+      throw error
+    }
+    if (typeof error === 'object' && error !== null && 'error' in error) {
+      const kratosError = error as { error?: { message?: string } }
+      throw new Error(kratosError.error?.message || 'Unknown error')
+    }
+    throw new Error('Unknown error')
+  }
 }
 
 // Error handling
