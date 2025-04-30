@@ -33,7 +33,7 @@ importers:
         specifier: ^0.503.0
         version: 0.503.0(react@18.3.1)
       luxon:
-        specifier: ^3.6.1
+        specifier: ^3.4.4
         version: 3.6.1
       react:
         specifier: ^18.2.0
@@ -47,6 +47,9 @@ importers:
       tailwindcss-animate:
         specifier: ^1.0.7
         version: 1.0.7(tailwindcss@3.4.17)
+      timezone-support:
+        specifier: ^3.1.0
+        version: 3.1.0
     devDependencies:
       '@remix-run/dev':
         specifier: ^2.16.5
@@ -2725,6 +2728,12 @@ packages:
   modern-ahocorasick@1.1.0:
     resolution: {integrity: sha512-sEKPVl2rM+MNVkGQt3ChdmD8YsigmXdn5NifZn6jiwn9LRJpWm8F3guhaqrJT/JOat6pwpbXEk6kv+b9DMIjsQ==}
 
+  moment-timezone@0.5.39:
+    resolution: {integrity: sha512-hoB6suq4ISDj7BDgctiOy6zljBsdYT0++0ZzZm9rtxIvJhIbQ3nmbgSWe7dNFGurl6/7b1OUkHlmN9JWgXVz7w==}
+
+  moment@2.30.1:
+    resolution: {integrity: sha512-uEmtNhbDOrWPFS+hdjFCBfy9f2YoyzRpwcl+DqpC6taX21FzsTLQVbMV/W7PzNSX6x/bhC1zA3c2UQ5NzH6how==}
+
   morgan@1.10.0:
     resolution: {integrity: sha512-AbegBVI4sh6El+1gNwvD5YIck7nSA36weD7xvIxG4in80j/UoK8AEGaWnnz8v1GxonMCltmlNs5ZKbGvl9b1XQ==}
     engines: {node: '>= 0.8.0'}
@@ -3508,6 +3517,11 @@ packages:
 
   through2@2.0.5:
     resolution: {integrity: sha512-/mrRod8xqpA+IHSLyGCQ2s8SPHiCDEeQJSep1jqLYeEUClOFG2Qsh+4FU6G9VeqpZnGW/Su8LQGc4YKni5rYSQ==}
+
+  timezone-support@3.1.0:
+    resolution: {integrity: sha512-N04dOzxt7Bw3PZ5ts8ofkQx6RsqWDo8cUQ/a8fdtywB58NIctmdbUUDWZSrgtI7c2jzA6MZ1Z6jY6OtBvc+CUQ==}
+    engines: {node: '>=14.8'}
+    hasBin: true
 
   tinyglobby@0.2.13:
     resolution: {integrity: sha512-mEwzpUgrLySlveBwEVDMKk5B57bhLPYovRfPAXD5gA/98Opn0rCDj3GtLwFvCvH5RK9uPCExUROW5NjDwvqkxw==}
@@ -6888,6 +6902,12 @@ snapshots:
 
   modern-ahocorasick@1.1.0: {}
 
+  moment-timezone@0.5.39:
+    dependencies:
+      moment: 2.30.1
+
+  moment@2.30.1: {}
+
   morgan@1.10.0:
     dependencies:
       basic-auth: 2.0.1
@@ -7811,6 +7831,10 @@ snapshots:
     dependencies:
       readable-stream: 2.3.8
       xtend: 4.0.2
+
+  timezone-support@3.1.0:
+    dependencies:
+      moment-timezone: 0.5.39
 
   tinyglobby@0.2.13:
     dependencies:

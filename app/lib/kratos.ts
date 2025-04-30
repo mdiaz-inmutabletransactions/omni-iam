@@ -1,30 +1,41 @@
 // Ory Kratos API utilities for Remix
 const KRATOS_BASE_URL = process.env.KRATOS_PUBLIC_URL || 'http://localhost:4433'
-const TIMEZONE = process.env.KRATOS_TIMEZONE || 'UTC'
-const LOCALE = process.env.LOCALE || 'en-US'
+let TIMEZONE = process.env.KRATOS_TIMEZONE || 'Etc/UTC';
+let LOCALE = process.env.LOCALE || 'en-US';
 
 
 import { DateTime } from 'luxon';
+import { listTimeZones } from 'timezone-support';
 
 function validateEnv() {
   // Validate and correct time zone
-  const rawOffset = process.env.KRATOS_TIMEZONE || 'UTC';
-  const match = rawOffset.match(/^UTC([+-])(\d{1,2})(?::(\d{2}))?$/);
+
+  const match = listTimeZones().includes(TIMEZONE);
   if (!match) {
-    console.warn(`[WARN] Invalid timezone format: "${rawOffset}" — falling back to "UTC"`);
-    process.env.KRATOS_TIMEZONE = 'UTC';
-  } else {
-    let [, sign, hours, minutes = '00'] = match;
-    hours = hours.padStart(2, '0');
-    process.env.KRATOS_TIMEZONE = `UTC${sign}${hours}:${minutes}`;
+    console.warn(`[WARN] Invalid timezone format: "${TIMEZONE}" — falling back to "Etc/UTC". See https://en.wikipedia.org/wiki/List_of_tz_database_time_zones for valid IANA time zone identifiers.`);
+    TIMEZONE  = 'Etc/UTC';
+    process.env.KRATOS_TIMEZONE = TIMEZONE;
+  }else{
+    console.log(`[INFO] Timezone set to "${TIMEZONE}"`);
   }
 
   // Validate and correct locale
-  const rawLocale = process.env.LOCALE || 'en-US';
-  const isLocaleValid = Intl.DateTimeFormat.supportedLocalesOf(rawLocale).length > 0;
-  if (!isLocaleValid) {
-    console.warn(`[WARN] Invalid locale: "${rawLocale}" — falling back to "en-US"`);
-    process.env.LOCALE = 'en-US';
+  try {
+    const isLocaleValid = Intl.DateTimeFormat.supportedLocalesOf(LOCALE).length > 0;
+  
+    if (!isLocaleValid) {
+      throw new RangeError(`Invalid locale: "${LOCALE}"`);
+    }
+  
+    console.log(`[INFO] Locale set to "${LOCALE}"`);
+  } catch (err) {
+    console.warn(`[WARN] Invalid locale: "${LOCALE}" — falling back to "en-US".`);
+    console.warn(`It should be a valid locale identifier. See:`);
+    console.warn(`- https://en.wikipedia.org/wiki/ISO_639-1`);
+    console.warn(`- https://en.wikipedia.org/wiki/Locale_(computer_software)`);
+    console.warn(`- https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Intl/Locale`);
+    LOCALE = 'en-US';
+    process.env.LOCALE = LOCALE;
   }
 }
 
@@ -32,8 +43,8 @@ function validateEnv() {
 validateEnv();
 
 function formatTimestamp(): string {
-  const offset = process.env.KRATOS_TIMEZONE || 'UTC';
-  const locale = process.env.LOCALE || 'en-US';
+  const offset = process.env.KRATOS_TIMEZONE;
+  const locale = process.env.LOCALE;
   const dt = DateTime.utc().setZone(offset).setLocale(locale);
   return dt.toLocaleString(DateTime.DATETIME_FULL);
 }
