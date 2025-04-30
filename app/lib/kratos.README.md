@@ -66,7 +66,13 @@ const kratos = new KratosFetch({
 });
 
 // Example login flow
-const flow = await kratos.initLoginFlow();
+const flow = await initLoginFlow(true); // Enable debug logging
+
+// Example login submission
+const result = await submitLogin(flow.id, {
+  identifier: "user@example.com",
+  password: "password123"
+});
 ```
 
 ## API Reference

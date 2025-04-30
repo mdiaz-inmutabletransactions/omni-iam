@@ -1,11 +1,31 @@
-import type { MetaFunction } from "@remix-run/node";
+import type { LoaderFunction, MetaFunction } from "@remix-run/node";
 import { Button } from "~/components/ui/button";
+import { useLoaderData } from "@remix-run/react";
+import {initLoginFlow} from "../lib/kratos";
+import { TerminalSquare } from "lucide-react";
 
 export const meta: MetaFunction = () => {
+
+  
+
   return [
     { title: "New Remix App" },
     { name: "description", content: "Welcome to Remix!" },
   ];
+};
+
+
+export const  loader: LoaderFunction = async () => {
+  
+  const loginFlow =  await initLoginFlow(true); 
+  
+  // write to console loginFlow.id
+  console.log("loginFlow.id", loginFlow.id);
+
+  return {
+    title: "Welcome to Remix",
+    description: "Welcome to Remix!",
+  };
 };
 
 export default function Index() {
