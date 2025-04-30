@@ -1,5 +1,37 @@
 // Ory Kratos API utilities for Remix
 const KRATOS_BASE_URL = process.env.KRATOS_PUBLIC_URL || 'http://localhost:4433'
+const TIMEZONE = process.env.KRATOS_TIMEZONE || 'UTC'
+const LOCALE = process.env.LOCALE || 'en-US'
+
+function formatTimestamp(): string {
+  return new Date().toLocaleString(LOCALE, { 
+    timeZone: TIMEZONE,
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  })
+}
+
+const KratosConsole = {
+  log: (...args: any[]) => {
+    console.log(`[${formatTimestamp()}]`, ...args)
+  },
+  error: (...args: any[]) => {
+    console.error(`[${formatTimestamp()}]`, ...args)
+  },
+  group: (label: string, callback: () => void) => {
+    console.groupCollapsed(`[${formatTimestamp()}] ${label}`)
+    try {
+      callback()
+    } finally {
+      console.groupEnd()
+    }
+  }
+}
 
 // Telemetry configuration
 interface TelemetryConfig {
@@ -36,7 +68,7 @@ function checkCircuitBreaker(): boolean {
   
   if (circuitBreaker.state === 'open') {
     if (now - circuitBreaker.lastFailure > CIRCUIT_BREAKER_RESET_TIMEOUT) {
-      console.log('[CIRCUIT BREAKER] Transitioning to half-open state')
+      KratosConsole.log('[CIRCUIT BREAKER] Transitioning to half-open state')
       circuitBreaker.state = 'half-open'
       circuitBreaker.failures = 0
       circuitBreaker.testRequestTime = now
@@ -49,7 +81,7 @@ function checkCircuitBreaker(): boolean {
     // If we already have a test request in progress
     if (circuitBreaker.testRequestTime > 0) {
       if (now - circuitBreaker.testRequestTime > 5000) {
-        console.log('[CIRCUIT BREAKER] Test request timeout, returning to open state')
+        KratosConsole.log('[CIRCUIT BREAKER] Test request timeout, returning to open state')
         circuitBreaker.state = 'open'
         circuitBreaker.lastFailure = now
         circuitBreaker.testRequestTime = 0
@@ -70,7 +102,7 @@ function updateCircuitBreaker(success: boolean): void {
   
   if (success) {
     if (circuitBreaker.state === 'half-open') {
-      console.log('[CIRCUIT BREAKER] Test request succeeded, closing circuit')
+      KratosConsole.log('[CIRCUIT BREAKER] Test request succeeded, closing circuit')
       circuitBreaker.state = 'closed'
       circuitBreaker.testRequestTime = 0
     }
@@ -80,11 +112,11 @@ function updateCircuitBreaker(success: boolean): void {
     circuitBreaker.lastFailure = now
     
     if (circuitBreaker.state === 'half-open') {
-      console.log('[CIRCUIT BREAKER] Test request failed, reopening circuit')
+      KratosConsole.log('[CIRCUIT BREAKER] Test request failed, reopening circuit')
       circuitBreaker.state = 'open'
       circuitBreaker.testRequestTime = 0
     } else if (circuitBreaker.failures >= CIRCUIT_BREAKER_THRESHOLD) {
-      console.log('[CIRCUIT BREAKER] Failure threshold reached, opening circuit')
+      KratosConsole.log('[CIRCUIT BREAKER] Failure threshold reached, opening circuit')
       circuitBreaker.state = 'open'
     }
   }
@@ -109,23 +141,23 @@ const tracer = {
     }
 
     try {
-      console.log(`[TRACE] Start ${name} (${spanId})`)
+        KratosConsole.log(`[TRACE] Start ${name} (${spanId})`)
       return {
         end: () => {
           if (spanActive) {
-            console.log(`[TRACE] End ${name} (${spanId})`)
+            KratosConsole.log(`[TRACE] End ${name} (${spanId})`)
             spanActive = false
           }
         },
         addAttribute: (key: string, value: any) => {
           if (spanActive) {
-            console.log(`[TRACE] ${name} (${spanId}) - ${key}: ${JSON.stringify(value)}`)
+            KratosConsole.log(`[TRACE] ${name} (${spanId}) - ${key}: ${JSON.stringify(value)}`)
           }
         },
         id: spanId
       }
     } catch (err) {
-      console.error('[TRACING] Failed to create span, using fallback:', err)
+      KratosConsole.error('[TRACING] Failed to create span, using fallback:', err)
       return fallbackSpan
     }
   },
@@ -133,9 +165,9 @@ const tracer = {
     if (!telemetryConfig.enabled) return
     
     try {
-      console.error('[TELEMETRY] Exception:', error)
+      KratosConsole.error('[TELEMETRY] Exception:', error)
     } catch (err) {
-      console.error('[TELEMETRY] Failed to record exception:', err)
+      KratosConsole.error('[TELEMETRY] Failed to record exception:', err)
     }
   },
   healthCheck: async () => {
@@ -207,42 +239,45 @@ type ResponseMiddleware<T = any> = (response: Response) => Promise<T>
 // Debug logging middleware
 const debugLoggingMiddleware = {
   request: (): RequestMiddleware => (url, options) => {
-    console.groupCollapsed(`Kratos API Request: ${options.method || 'GET'} ${url}`)
-    console.log('Request Headers:', options.headers)
-    if (options.body) {
-      try {
-        console.log('Request Payload:', JSON.parse(options.body as string))
-      } catch {
-        console.log('Request Payload:', options.body)
+    KratosConsole.group(`Kratos API Request: ${options.method || 'GET'} ${url}`, () => {
+      KratosConsole.log('Request Headers:', options.headers)
+      if (options.body) {
+        try {
+          KratosConsole.log('Request Payload:', JSON.parse(options.body as string))
+        } catch {
+          KratosConsole.log('Request Payload:', options.body)
+        }
       }
-    }
-    console.groupEnd()
+    })
     return [url, options]
   },
   response: <T>(): ResponseMiddleware<T> => async (response) => {
     const clone = response.clone()
     const clientCorrelationId = response.headers.get('X-Correlation-ID') || 'none'
     const serverCorrelationId = response.headers.get('Set-Correlation-ID') || 'none'
-    console.groupCollapsed(`Kratos API Response: ${response.status} ${response.url}`)
-    console.log('Client Correlation ID (X-Correlation-ID):', clientCorrelationId)
-    console.log('Server Correlation ID (Set-Correlation-ID):', serverCorrelationId)
-    console.log('Response Headers:', Object.fromEntries(clone.headers.entries()))
-    try {
-      const data = await clone.json()
-      console.log('Response Payload:', data)
-      console.groupEnd()
-      return {
-        ...data,
-        _metadata: {
-          correlationId: serverCorrelationId,
-          requestId: clientCorrelationId,
-          headers: Object.fromEntries(response.headers.entries())
-        }
+    
+    let responseData: T
+    await KratosConsole.group(`Kratos API Response: ${response.status} ${response.url}`, async () => {
+      KratosConsole.log('Client Correlation ID (X-Correlation-ID):', clientCorrelationId)
+      KratosConsole.log('Server Correlation ID (Set-Correlation-ID):', serverCorrelationId)
+      KratosConsole.log('Response Headers:', Object.fromEntries(clone.headers.entries()))
+      
+      try {
+        responseData = await clone.json()
+        KratosConsole.log('Response Payload:', responseData)
+      } catch (err) {
+        KratosConsole.log('Response Payload: [non-JSON]', await clone.text())
+        throw err
       }
-    } catch (err) {
-      console.log('Response Payload: [non-JSON]', await clone.text())
-      console.groupEnd()
-      throw err
+    })
+
+    return {
+      ...responseData!,
+      _metadata: {
+        correlationId: serverCorrelationId,
+        requestId: clientCorrelationId,
+        headers: Object.fromEntries(response.headers.entries())
+      }
     }
   }
 }
@@ -380,10 +415,10 @@ export async function submitLogin(flowId: string, body: any, debug = false): Pro
 async function parseKratosError(response: Response): Promise<KratosError> {
   try {
     const error = await response.json()
-    console.groupCollapsed(`Kratos API Error: ${response.status} ${response.url}`)
-    console.log('Error Response:', error)
-    console.log('Response Headers:', Object.fromEntries(response.headers.entries()))
-    console.groupEnd()
+    KratosConsole.group(`Kratos API Error: ${response.status} ${response.url}`, () => {
+      KratosConsole.log('Error Response:', error)
+      KratosConsole.log('Response Headers:', Object.fromEntries(response.headers.entries()))
+    })
     return {
       error: {
         code: response.status,

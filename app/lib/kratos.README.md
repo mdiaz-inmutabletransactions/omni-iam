@@ -2,7 +2,9 @@
 
 ## Introduction
 
-KratosFetch is a modern, lightweight API wrapper for Ory Kratos built on the Fetch API. It provides a clean, middleware-based architecture for interacting with Kratos' identity management services while offering flexible logging and monitoring capabilities.
+KratosFetch is a modern, lightweight server-side API wrapper for Ory Kratos. It provides a clean, middleware-based architecture for interacting with Kratos' identity management services while offering flexible logging and monitoring capabilities. 
+
+Important: This is a server-side library and should not be used in browser environments.
 
 ## Key Features
 
@@ -49,6 +51,8 @@ graph TD
 
 ```bash
 npm install @ory/kratos-client kratos-fetch
+# or
+pnpm add @ory/kratos-client kratos-fetch
 ```
 
 ## Basic Usage
@@ -66,7 +70,13 @@ const kratos = new KratosFetch({
 });
 
 // Example login flow
-const flow = await kratos.initLoginFlow();
+const flow = await initLoginFlow(true); // Enable debug logging
+
+// Example login submission
+const result = await submitLogin(flow.id, {
+  identifier: "user@example.com",
+  password: "password123"
+});
 ```
 
 ## API Reference
@@ -87,6 +97,24 @@ Submits login credentials
 
 ## Configuration
 
+### Environment Variables (.env)
+```bash
+# Kratos API Settings
+KRATOS_PUBLIC_URL=http://localhost:4433
+KRATOS_TIMEOUT=5000
+KRATOS_RETRY_DELAY=1000
+KRATOS_LOG_LEVEL=debug
+
+# Logging Configuration
+KRATOS_TIMEZONE=UTC-6  # Timezone for log timestamps
+LOCALE=en-US           # Locale for timestamp formatting
+
+# Telemetry Settings
+TELEMETRY_ENABLED=true
+TELEMETRY_SERVICE_NAME=kratos-client
+```
+
+### TypeScript Configuration
 ```typescript
 interface KratosFetchConfig {
   baseUrl: string;
@@ -116,12 +144,34 @@ All errors follow the format:
 
 ## Logging
 
-To enable logging:
+KratosFetch provides server-side timestamped logging through the `KratosConsole` utility which:
+- Uses Node.js crypto module for secure operations
+- Formats timestamps according to configured timezone (KRATOS_TIMEZONE)
+- Uses the specified locale (LOCALE) for date formatting
+- Includes consistent log prefixes
+- Is optimized for server environments
+
+### Configuration
 ```typescript
 new KratosFetch({
   enableLogging: true,
-  logger: console // Can be any logger interface
+  logger: KratosConsole // Uses built-in timestamped logger
 });
+
+// Or with custom logger:
+new KratosFetch({
+  enableLogging: true,
+  logger: {
+    log: (...args) => console.log(`[CUSTOM]`, ...args),
+    error: (...args) => console.error(`[CUSTOM]`, ...args)
+  }
+});
+```
+
+### Log Format
+Example log output:
+```
+[2023-01-01 12:34:56] [CIRCUIT BREAKER] Transitioning to half-open state
 ```
 
 ## Contributing
