@@ -1,15 +1,59 @@
 # Kratos API Client - Technical Implementation Guide
 
 ## Overview
-This document describes the technical implementation of the Kratos API client with focus on reliability, observability, and resilience features.
+This document describes the technical implementation of the Kratos API client with focus on reliability, observability, and resilience features. The implementation includes the KratosFetch wrapper - a modern Fetch API-based client with middleware support.
+
+## KratosFetch API Wrapper
+
+### Introduction
+KratosFetch is a lightweight API wrapper for Ory Kratos built on the Fetch API, featuring middleware architecture and optional logging at each request stage.
+
+### Key Features
+- **Middleware Architecture**: Pre, main, and post middleware hooks
+- **Optional Logging**: Configurable at each middleware stage
+- **TypeScript Support**: Full type definitions
+- **Error Handling**: Consistent patterns across all calls
+- **Circuit Breaker**: Built-in resilience
+
+```mermaid
+graph TD
+    A[Client Request] --> B[Pre-Middleware]
+    B --> C[Main Kratos API Call]
+    C --> D[Post-Middleware]
+    D --> E[Client Response]
+    
+    B -->|Optional Logging| F[Logger]
+    C -->|Optional Logging| F
+    D -->|Optional Logging| F
+```
+
+### Basic Usage
+```typescript
+const kratos = new KratosFetch({
+  baseUrl: 'https://kratos.example.com',
+  enableLogging: true
+});
+const flow = await kratos.initLoginFlow();
+```
+
+[See full KratosFetch documentation](./app/lib/kratos.README.md) for detailed API reference and configuration options.
 
 ## Core Features
 
 ### 1. Observability & Tracing
 - **Distributed Tracing**:
-  - Unique correlation IDs for each request
-  - Span-based request tracking
-  - End-to-end trace context propagation
+  - **Correlation ID Pattern**: 
+    - Uses a cookie-like pattern with `X-Correlation-ID` header (request) and `Set-Correlation-ID` (response)
+    - The correlation ID serves as the span ID for the entire request lifecycle
+    - Propagated across all service boundaries and async operations
+  - **Span Hierarchy**:
+    - Root span created from initial correlation ID
+    - Child spans inherit and extend the parent span context
+    - Span context includes timing, service names, and metadata
+  - **Trace Context Propagation**:
+    - W3C Trace Context standard headers
+    - Baggage items for additional context
+    - Automatic injection into logs and metrics
 - **Logging**:
   - Structured request/response logging
   - Debug mode with detailed payload inspection

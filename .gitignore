@@ -1,5 +1,38 @@
-node_modules
+# Dependencies
+node_modules/
+.pnpm-debug.log
 
+# Build files
 /.cache
 /build
+/dist
+*.tsbuildinfo
+
+# Environment files
 .env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Misc
+*.bak
+*.tmp
