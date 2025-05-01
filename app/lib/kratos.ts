@@ -270,7 +270,7 @@ export interface KratosError {
 
 // Middleware types
 type RequestMiddleware = (url: string, options: RequestInit) => [string, RequestInit]
-type ResponseMiddleware<T = any> = (response: Response) => Promise<T>
+type ResponseMiddleware<T = any> = (response: Response) => Promise<T | Response>
 
 // Debug logging middleware
 const debugLoggingMiddleware = {
@@ -293,31 +293,21 @@ const debugLoggingMiddleware = {
     const clientCorrelationId = response.headers.get('X-Correlation-ID') || 'none'
     const serverCorrelationId = response.headers.get('Set-Correlation-ID') || 'none'
     
-    let responseData: T
     await KratosConsole.group(`Kratos API Response: ${response.status} ${response.url}`, async () => {
       KratosConsole.log('Client Correlation ID (X-Correlation-ID):', clientCorrelationId)
       KratosConsole.log('Server Correlation ID (Set-Correlation-ID):', serverCorrelationId)
       KratosConsole.log('Response Headers:', Object.fromEntries(clone.headers.entries()))
       
-      
       try {
-        responseData = await clone.json()
+        const responseData = await clone.json()
         KratosConsole.log('Response Payload:', inspect(responseData,{ depth: null, colors: true }));
-        
       } catch (err) {
         KratosConsole.log('Response Payload: [non-JSON]', await clone.text())
-        throw err
       }
     })
 
-    return {
-      ...responseData!,
-      _metadata: {
-        correlationId: serverCorrelationId,
-        requestId: clientCorrelationId,
-        headers: Object.fromEntries(response.headers.entries())
-      }
-    }
+    // Return the original response to allow chaining
+    return response
   }
 }
 
@@ -378,35 +368,31 @@ async function kratosFetch<T = any>(
     throw await parseKratosError(response)
   }
 
-  // Apply response middleware if provided
+  // Apply response middleware if provided (purely for logging)
   if (middlewares?.response) {
-    let result: T | undefined
     for (const middleware of middlewares.response) {
-      result = await middleware(response)
-    }
-    if (result !== undefined) {
-      return result
+      await middleware(response)
     }
   }
 
   // Handle successful response
-    const spanId = response.headers.get('X-Correlation-ID') || correlationId
-    const data = await response.json()
-    // Mirror the cookie pattern: client sends X-Correlation-ID, server responds with Set-Correlation-ID
-    const serverCorrelationId = response.headers.get('Set-Correlation-ID') || correlationId
-    span?.addAttribute?.('status', response.status)
-    span?.addAttribute?.('correlationId', serverCorrelationId)
-    span?.addAttribute?.('response', data)
-    span?.end?.()
-    
-    return {
-      ...data,
-      _metadata: {
-        correlationId: serverCorrelationId,
-        requestId: correlationId,
-        headers: Object.fromEntries(response.headers.entries())
-      }
+  const spanId = response.headers.get('X-Correlation-ID') || correlationId
+  const data = await response.json()
+  // Mirror the cookie pattern: client sends X-Correlation-ID, server responds with Set-Correlation-ID
+  const serverCorrelationId = response.headers.get('Set-Correlation-ID') || correlationId
+  span?.addAttribute?.('status', response.status)
+  span?.addAttribute?.('correlationId', serverCorrelationId)
+  span?.addAttribute?.('response', data)
+  span?.end?.()
+  
+  return {
+    ...data,
+    _metadata: {
+      correlationId: serverCorrelationId,
+      requestId: correlationId,
+      headers: Object.fromEntries(response.headers.entries())
     }
+  }
   } catch (error) {
     span?.addAttribute?.('error', (error as Error).message)
     tracer.recordException(error as Error)
@@ -432,7 +418,15 @@ async function kratosFetch<T = any>(
 
 // Initialize a login flow
 export async function initLoginFlow(debug = false): Promise<KratosFlow> {
-  return kratosFetch('/self-service/login/browser', {}, undefined, debug)
+  const  flow = await kratosFetch('/self-service/login/browser', {}, undefined, debug)
+
+  if (flow.ui?.messages) {
+    flow.ui.messages.forEach((message: { text: string }) => {
+      KratosConsole.log('Message:', message.text)
+    })
+  }
+  return flow
+
 }
 
 // Initialize a registration flow
