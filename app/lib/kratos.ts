@@ -1,11 +1,14 @@
+import { spawn } from 'child_process';
+import { DateTime } from 'luxon';
+import { listTimeZones } from 'timezone-support';
+import { inspect } from 'util';
+
 // Ory Kratos API utilities for Remix
 const KRATOS_BASE_URL = process.env.KRATOS_PUBLIC_URL || 'http://localhost:4433'
 let TIMEZONE = process.env.KRATOS_TIMEZONE || 'Etc/UTC';
 let LOCALE = process.env.LOCALE || 'en-US';
 
 
-import { DateTime } from 'luxon';
-import { listTimeZones } from 'timezone-support';
 
 function validateEnv() {
   // Validate and correct time zone
@@ -63,7 +66,7 @@ const KratosConsole = {
     } finally {
       console.groupEnd()
     }
-  }
+  },
 }
 
 // Telemetry configuration
@@ -273,12 +276,13 @@ type ResponseMiddleware<T = any> = (response: Response) => Promise<T>
 const debugLoggingMiddleware = {
   request: (): RequestMiddleware => (url, options) => {
     KratosConsole.group(`Kratos API Request: ${options.method || 'GET'} ${url}`, () => {
+      KratosConsole.log(options.headers)
       KratosConsole.log('Request Headers:', options.headers)
       if (options.body) {
         try {
-          KratosConsole.log('Request Payload:', JSON.parse(options.body as string))
+          KratosConsole.log('Request Payload:', inspect(JSON.parse(options.body as string),{ depth: null, colors: true }));
         } catch {
-          KratosConsole.log('Request Payload:', options.body)
+          KratosConsole.log('Request Payload:', inspect(options.body,{ depth: null, colors: true }));
         }
       }
     })
@@ -295,9 +299,11 @@ const debugLoggingMiddleware = {
       KratosConsole.log('Server Correlation ID (Set-Correlation-ID):', serverCorrelationId)
       KratosConsole.log('Response Headers:', Object.fromEntries(clone.headers.entries()))
       
+      
       try {
         responseData = await clone.json()
-        KratosConsole.log('Response Payload:', responseData)
+        KratosConsole.log('Response Payload:', inspect(responseData,{ depth: null, colors: true }));
+        
       } catch (err) {
         KratosConsole.log('Response Payload: [non-JSON]', await clone.text())
         throw err
@@ -326,12 +332,14 @@ async function kratosFetch<T = any>(
     request?: RequestMiddleware[]
     response?: ResponseMiddleware<T>[]
   },
-  debug = false,
+  debug = true,
   retryCount = 0
 ): Promise<T> {
   // Check circuit breaker state
   if (!checkCircuitBreaker()) {
     throw new Error('Service unavailable (circuit breaker open)')
+  }else{    
+    KratosConsole.log(`[CIRCUIT BREAKER] Circuit is closed, proceeding with request`)
   }
 
   const span = tracer.startSpan(`kratosFetch:${endpoint}`)
@@ -372,16 +380,23 @@ async function kratosFetch<T = any>(
 
   // Apply response middleware if provided
   if (middlewares?.response) {
+    let result: T | undefined
     for (const middleware of middlewares.response) {
-      return await middleware(response)
+      result = await middleware(response)
+    }
+    if (result !== undefined) {
+      return result
     }
   }
 
+  // Handle successful response
+    const spanId = response.headers.get('X-Correlation-ID') || correlationId
     const data = await response.json()
     // Mirror the cookie pattern: client sends X-Correlation-ID, server responds with Set-Correlation-ID
     const serverCorrelationId = response.headers.get('Set-Correlation-ID') || correlationId
     span?.addAttribute?.('status', response.status)
     span?.addAttribute?.('correlationId', serverCorrelationId)
+    span?.addAttribute?.('response', data)
     span?.end?.()
     
     return {

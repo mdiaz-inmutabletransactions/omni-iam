@@ -7,7 +7,6 @@
     "build": "remix vite:build",
     "dev": "remix vite:dev  -p 4555",
     "dev-local": "remix vite:dev  --mode local.dev -p 4455",
-    "dev-shell": "KRATOS_PUBLIC_URL=http://localhost:4433 KRATOS_TIMEZONE=UTC-6 LOCALE=xx-XX remix vite:dev -p 4455",
     "lint": "eslint --ignore-path .gitignore --cache --cache-location ./node_modules/.cache/eslint .",
     "start": "remix-serve ./build/server/index.js",
     "typecheck": "tsc",
