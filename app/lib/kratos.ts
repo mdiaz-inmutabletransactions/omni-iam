@@ -69,105 +69,12 @@ const KratosConsole = {
   },
 }
 
-// Telemetry configuration
-interface TelemetryConfig {
-  enabled: boolean
-  serviceName?: string
-  collectorEndpoint?: string
-}
-
-const telemetryConfig: TelemetryConfig = {
-  enabled: process.env.TELEMETRY_ENABLED === 'true',
-  serviceName: process.env.TELEMETRY_SERVICE_NAME || 'kratos-client',
-  collectorEndpoint: process.env.TELEMETRY_COLLECTOR_ENDPOINT
-}
-
-// Tracing utilities
-const tracer = {
-  startSpan: (name: string, correlationId?: string) => {
-    if (!telemetryConfig.enabled) return { end: () => {} }
-    
-    const spanId = correlationId || generateCorrelationId()
-    let spanActive = true
-    
-    // Fallback span that still maintains basic functionality
-    const fallbackSpan = {
-      end: () => {
-        console.log(`[TRACE] End ${name} (${spanId}) (fallback)`)
-        spanActive = false
-      },
-      addAttribute: () => {},
-      id: spanId
-    }
-
-    try {
-        KratosConsole.log(`[TRACE] Start ${name} (${spanId})`)
-      return {
-        end: () => {
-          if (spanActive) {
-            KratosConsole.log(`[TRACE] End ${name} (${spanId})`)
-            spanActive = false
-          }
-        },
-        addAttribute: (key: string, value: any) => {
-          if (spanActive) {
-            KratosConsole.log(`[TRACE] ${name} (${spanId}) - ${key}: ${JSON.stringify(value)}`)
-          }
-        },
-        id: spanId
-      }
-    } catch (err) {
-      KratosConsole.error('[TRACING] Failed to create span, using fallback:', err)
-      return fallbackSpan
-    }
-  },
-  recordException: (error: Error) => {
-    if (!telemetryConfig.enabled) return
-    
-    try {
-      KratosConsole.error('[TELEMETRY] Exception:', error)
-    } catch (err) {
-      KratosConsole.error('[TELEMETRY] Failed to record exception:', err)
-    }
-  },
-  healthCheck: async () => {
-    if (!telemetryConfig.enabled) return true
-    
-    try {
-      if (telemetryConfig.collectorEndpoint) {
-        const controller = new AbortController()
-        const timeout = setTimeout(() => controller.abort(), 2000)
-        
-        try {
-          const response = await fetch(`${telemetryConfig.collectorEndpoint}/health`, {
-            signal: controller.signal
-          })
-          clearTimeout(timeout)
-          return response.ok
-        } catch {
-          clearTimeout(timeout)
-          return false
-        }
-      }
-      return true // Local logging is always available
-    } catch {
-      return false
-    }
-  }
-}
-
-// Generate a unique correlation ID
-const generateCorrelationId = () => {
-  return Math.random().toString(36).substring(2, 15) + 
-         Math.random().toString(36).substring(2, 15)
-}
-
 // Common headers for Kratos API requests
 const kratosHeaders = {
   'Accept': 'application/json',
   'Content-Type': 'application/json',
   credentials: 'include' as const,
-  'X-Correlation-ID': generateCorrelationId()
+
 }
 
 // Types for Kratos responses
@@ -247,9 +154,6 @@ async function kratosFetch<T = any>(
   retryCount = 0
 ): Promise<T> {
 
-  const span = tracer.startSpan(`kratosFetch:${endpoint}`)
-  span?.addAttribute?.('method', options.method || 'GET')
-  span?.addAttribute?.('url', endpoint)
 
   try {
     // Add debug middleware if enabled
@@ -260,13 +164,12 @@ async function kratosFetch<T = any>(
       }
     }
     let url = `${KRATOS_BASE_URL}${endpoint}`
-  const correlationId = generateCorrelationId()
+
   let requestOptions: RequestInit = {
     ...options,
     headers: {
       ...kratosHeaders,
       ...options.headers,
-      'X-Correlation-ID': correlationId
     }
   }
 
@@ -291,28 +194,15 @@ async function kratosFetch<T = any>(
   }
 
   // Handle successful response
-  const spanId = response.headers.get('X-Correlation-ID') || correlationId
   const data = await response.json()
-  // Mirror the cookie pattern: client sends X-Correlation-ID, server responds with Set-Correlation-ID
-  const serverCorrelationId = response.headers.get('Set-Correlation-ID') || correlationId
-  span?.addAttribute?.('status', response.status)
-  span?.addAttribute?.('correlationId', serverCorrelationId)
-  span?.addAttribute?.('response', data)
-  span?.end?.()
-  
+
   return {
     ...data,
     _metadata: {
-      correlationId: serverCorrelationId,
-      requestId: correlationId,
       headers: Object.fromEntries(response.headers.entries())
     }
   }
   } catch (error) {
-    span?.addAttribute?.('error', (error as Error).message)
-    tracer.recordException(error as Error)
-    span?.end?.()
-
     throw error
   }
 }
