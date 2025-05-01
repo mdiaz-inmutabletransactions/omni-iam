@@ -5,9 +5,6 @@ import {initLoginFlow} from "../lib/kratos";
 import { TerminalSquare } from "lucide-react";
 
 export const meta: MetaFunction = () => {
-
-  
-
   return [
     { title: "New Remix App" },
     { name: "description", content: "Welcome to Remix!" },
@@ -16,19 +13,14 @@ export const meta: MetaFunction = () => {
 
 
 export const  loader: LoaderFunction = async () => {
-  
   const loginFlow =  await initLoginFlow(true); 
+  return {loginFlow};
+}
+
+ export default function Index() {
+
+  const { loginFlow } = useLoaderData<typeof loader>();
   
-  // write to console loginFlow.id
-  console.log("loginFlow.id", loginFlow.id);
-
-  return {
-    title: "Welcome to Remix",
-    description: "Welcome to Remix!",
-  };
-};
-
-export default function Index() {
   return (
     <div className="flex h-screen items-center justify-center">
       <div className="flex flex-col items-center gap-16">
@@ -36,7 +28,7 @@ export default function Index() {
           <h1 className="leading text-2xl font-bold text-gray-800 dark:text-gray-100">
             Welcome to <span className="sr-only">Remix</span>
           </h1>
-          <Button>hello, I am a Shadcn button</Button>
+          <Button>hello, I am a Shadcn button. Flow ID:  {loginFlow.id}</Button>
           <div className="h-[144px] w-[434px]">
             <img
               src="/logo-light.png"
