@@ -76,86 +76,10 @@ interface TelemetryConfig {
   collectorEndpoint?: string
 }
 
-interface CircuitBreakerState {
-  failures: number
-  lastFailure: number
-  testRequestTime: number
-  state: 'closed' | 'open' | 'half-open'
-}
-
-export const circuitBreaker: CircuitBreakerState = {
-  failures: 0,
-  lastFailure: 0,
-  testRequestTime: 0,
-  state: 'closed'
-}
-
-const CIRCUIT_BREAKER_THRESHOLD = 5
-const CIRCUIT_BREAKER_RESET_TIMEOUT = 30000 // 30 seconds
-
 const telemetryConfig: TelemetryConfig = {
   enabled: process.env.TELEMETRY_ENABLED === 'true',
   serviceName: process.env.TELEMETRY_SERVICE_NAME || 'kratos-client',
   collectorEndpoint: process.env.TELEMETRY_COLLECTOR_ENDPOINT
-}
-
-function checkCircuitBreaker(): boolean {
-  const now = Date.now()
-  
-  if (circuitBreaker.state === 'open') {
-    if (now - circuitBreaker.lastFailure > CIRCUIT_BREAKER_RESET_TIMEOUT) {
-      KratosConsole.log('[CIRCUIT BREAKER] Transitioning to half-open state')
-      circuitBreaker.state = 'half-open'
-      circuitBreaker.failures = 0
-      circuitBreaker.testRequestTime = now
-      return true // Allow one test request
-    }
-    return false // Still in open state
-  }
-  
-  if (circuitBreaker.state === 'half-open') {
-    // If we already have a test request in progress
-    if (circuitBreaker.testRequestTime > 0) {
-      if (now - circuitBreaker.testRequestTime > 5000) {
-        KratosConsole.log('[CIRCUIT BREAKER] Test request timeout, returning to open state')
-        circuitBreaker.state = 'open'
-        circuitBreaker.lastFailure = now
-        circuitBreaker.testRequestTime = 0
-        return false
-      }
-      return false // Only allow one test request at a time
-    }
-    // Mark this as the test request
-    circuitBreaker.testRequestTime = now
-    return true
-  }
-  
-  return true // Closed state - allow all requests
-}
-
-function updateCircuitBreaker(success: boolean): void {
-  const now = Date.now()
-  
-  if (success) {
-    if (circuitBreaker.state === 'half-open') {
-      KratosConsole.log('[CIRCUIT BREAKER] Test request succeeded, closing circuit')
-      circuitBreaker.state = 'closed'
-      circuitBreaker.testRequestTime = 0
-    }
-    circuitBreaker.failures = 0
-  } else {
-    circuitBreaker.failures++
-    circuitBreaker.lastFailure = now
-    
-    if (circuitBreaker.state === 'half-open') {
-      KratosConsole.log('[CIRCUIT BREAKER] Test request failed, reopening circuit')
-      circuitBreaker.state = 'open'
-      circuitBreaker.testRequestTime = 0
-    } else if (circuitBreaker.failures >= CIRCUIT_BREAKER_THRESHOLD) {
-      KratosConsole.log('[CIRCUIT BREAKER] Failure threshold reached, opening circuit')
-      circuitBreaker.state = 'open'
-    }
-  }
 }
 
 // Tracing utilities
@@ -312,9 +236,6 @@ const debugLoggingMiddleware = {
 }
 
 // Generic Kratos fetch wrapper with middleware and telemetry support
-const MAX_RETRIES = 3
-const INITIAL_RETRY_DELAY = 1000 // 1 second
-
 async function kratosFetch<T = any>(
   endpoint: string,
   options: RequestInit = {},
@@ -325,12 +246,6 @@ async function kratosFetch<T = any>(
   debug = true,
   retryCount = 0
 ): Promise<T> {
-  // Check circuit breaker state
-  if (!checkCircuitBreaker()) {
-    throw new Error('Service unavailable (circuit breaker open)')
-  }else{    
-    KratosConsole.log(`[CIRCUIT BREAKER] Circuit is closed, proceeding with request`)
-  }
 
   const span = tracer.startSpan(`kratosFetch:${endpoint}`)
   span?.addAttribute?.('method', options.method || 'GET')
@@ -397,20 +312,6 @@ async function kratosFetch<T = any>(
     span?.addAttribute?.('error', (error as Error).message)
     tracer.recordException(error as Error)
     span?.end?.()
-
-    // Update circuit breaker
-    updateCircuitBreaker(false)
-
-    // Retry for network errors or 5xx responses
-    const shouldRetry = (error instanceof TypeError || // Network error
-                        (error as KratosError)?.error?.code >= 500) && 
-                       retryCount < MAX_RETRIES
-
-    if (shouldRetry) {
-      const delay = INITIAL_RETRY_DELAY * Math.pow(2, retryCount)
-      await new Promise(resolve => setTimeout(resolve, delay))
-      return kratosFetch<T>(endpoint, options, middlewares, debug, retryCount + 1)
-    }
 
     throw error
   }
