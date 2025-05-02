@@ -3,6 +3,7 @@ import { DateTime } from 'luxon';
 import { listTimeZones } from 'timezone-support';
 import { inspect } from 'util';
 import pino from 'pino';
+import * as pinoOtel from 'pino-opentelemetry-transport';
 
 // Ory Kratos API utilities for Remix
 const KRATOS_BASE_URL = process.env.KRATOS_PUBLIC_URL || 'http://localhost:4433'
@@ -523,53 +524,87 @@ process.on('SIGTERM', () => {
 
 // Try to initialize OpenTelemetry, with a safe fallback
 // Try to initialize OpenTelemetry, with a safe fallback
-function tryInitializeOpenTelemetry() {
+import { spawn } from 'child_process';
+import { DateTime } from 'luxon';
+import { listTimeZones } from 'timezone-support';
+import { inspect } from 'util';
+import pino from 'pino';
+// Import the default export from the OpenTelemetry transport
+import pinoOtelTransport from 'pino-opentelemetry-transport';
+
+// Ory Kratos API utilities for Remix
+//const KRATOS_BASE_URL = process.env.KRATOS_PUBLIC_URL || 'http://localhost:4433'
+//let TIMEZONE = process.env.KRATOS_TIMEZONE || 'Etc/UTC';
+//let LOCALE = process.env.LOCALE || 'en-US';
+
+// Rest of your existing code...
+
+// Corrected OpenTelemetry initialization function
+function initializeOpenTelemetry() {
   try {
-    logger.info('Attempting to initialize OpenTelemetry...');
+    logger.info('Initializing OpenTelemetry...');
     
-    // Since we're running in Node.js, require will be available
-    try {
-      // Try to import the OpenTelemetry transport
-      const pinoOtel = require('pino-opentelemetry-transport');
+    // Configure OpenTelemetry with correct endpoints
+    const otelConfig = {
+      serviceName: process.env.SERVICE_NAME || 'kratos-service',
+      serviceVersion: process.env.SERVICE_VERSION || '1.0.0',
+      serviceNamespace: process.env.SERVICE_NAMESPACE || 'default',
+      // Use port 4317 for gRPC protocol (default for OpenTelemetry)
+      endpoint: process.env.OTEL_EXPORTER_OTLP_ENDPOINT || 'http://localhost:4317',
+      // Default to gRPC protocol
+      protocol: process.env.OTEL_EXPORTER_OTLP_PROTOCOL || 'grpc',
+      resourceAttributes: {
+        'deployment.environment': process.env.NODE_ENV || 'development',
+        'service.instance.id': process.env.INSTANCE_ID || '1'
+      },
+      // Add logging configuration
+      logLevel: process.env.OTEL_LOG_LEVEL || 'info',
+      // Enable console exporter for debugging during development
+      enableConsoleExporter: process.env.NODE_ENV !== 'production'
+    };
+    
+    // Check if the default export is a function
+    if (typeof pinoOtelTransport === 'function') {
+      // It's likely a factory function for creating a transport
+      const transport = pinoOtelTransport(otelConfig);
+      logger.info('Created OpenTelemetry transport');
+      return true;
+    } else if (pinoOtelTransport && typeof pinoOtelTransport.default === 'function') {
+      // Some bundlers might not properly handle default exports
+      const transport = pinoOtelTransport.default(otelConfig);
+      logger.info('Created OpenTelemetry transport using nested default');
+      return true;
+    } else if (pinoOtelTransport && typeof pinoOtelTransport.initializeOpenTelemetry === 'function') {
+      // Check if the module has the initialize method
+      pinoOtelTransport.initializeOpenTelemetry(otelConfig);
+      logger.info('OpenTelemetry initialized using initializeOpenTelemetry');
+      return true;
+    } else {
+      // No known initialization method found - let's log what we have
+      logger.info('OpenTelemetry transport found but no known initialization method available');
+      logger.info(`Available methods: ${Object.keys(pinoOtelTransport).join(', ')}`);
       
-      // Configure OpenTelemetry
-      const otelConfig = {
-        serviceName: process.env.SERVICE_NAME || 'kratos-service',
-        serviceVersion: process.env.SERVICE_VERSION || '1.0.0',
-        serviceNamespace: process.env.SERVICE_NAMESPACE || 'default',
-        endpoint: process.env.OTEL_EXPORTER_OTLP_ENDPOINT || 'http://localhost:4318',
-        protocol: process.env.OTEL_EXPORTER_OTLP_PROTOCOL || 'http/protobuf',
-        resourceAttributes: {
-          'deployment.environment': process.env.NODE_ENV || 'development',
-          'service.instance.id': process.env.INSTANCE_ID || '1'
+      // Let's try to inspect what's in the default export
+      if (pinoOtelTransport && typeof pinoOtelTransport === 'object') {
+        for (const key in pinoOtelTransport) {
+          logger.info(`Export '${key}' is type: ${typeof pinoOtelTransport[key]}`);
         }
-      };
-      
-      // Initialize the OpenTelemetry SDK
-      if (typeof pinoOtel.initializeOpenTelemetry === 'function') {
-        pinoOtel.initializeOpenTelemetry(otelConfig);
-      } else if (typeof pinoOtel.setupOpenTelemetry === 'function') {
-        pinoOtel.setupOpenTelemetry(otelConfig);
-      } else {
-        logger.warn('OpenTelemetry transport found but no initialization method available');
-        return false;
       }
       
-      logger.info('OpenTelemetry initialized successfully');
-      return true;
-    } catch (importError) {
-      logger.warn(`Could not import pino-opentelemetry-transport: ${importError.message}`);
       return false;
     }
   } catch (error) {
+    // Handle any errors during setup
     logger.warn(`OpenTelemetry integration failed: ${error.message}`);
     logger.warn('Application will continue with console logging only');
     return false;
   }
 }
 
+// Initialize OpenTelemetry
+const otelEnabled = initializeOpenTelemetry();
 // Try to initialize OpenTelemetry but don't fail if it doesn't work
-const otelInitialized = tryInitializeOpenTelemetry();
+const otelInitialized = initializeOpenTelemetry();
 
 // Export the logger for use in other modules
 export const kratosLogger = {
