@@ -1,9 +1,9 @@
-import { spawn } from 'child_process';
 import { DateTime } from 'luxon';
-import { listTimeZones } from 'timezone-support';
 import { inspect } from 'util';
 import pino from 'pino';
-import * as pinoOtel from 'pino-opentelemetry-transport';
+import pino1 from 'pino';
+import  pretty from 'pino-pretty';
+import moment from 'moment-timezone';
 
 // Ory Kratos API utilities for Remix
 const KRATOS_BASE_URL = process.env.KRATOS_PUBLIC_URL || 'http://localhost:4433'
@@ -13,15 +13,9 @@ let LOCALE = process.env.LOCALE || 'en-US';
 // Format timestamp for logs - with better error handling
 function formatTimestamp(): string {
   try {
-    // First, validate the timezone
-    const validTimezones = listTimeZones();
+ 
     let timezone = TIMEZONE;
-    
-    if (!validTimezones.includes(timezone)) {
-      console.warn(`Invalid timezone: "${timezone}", using Etc/UTC instead`);
-      timezone = 'Etc/UTC';
-    }
-    
+     
     const locale = LOCALE || 'en-US';
     const dt = DateTime.utc().setZone(timezone).setLocale(locale);
     
@@ -64,11 +58,11 @@ const consoleTransport = {
       
       // Remove standard fields for cleaner context output
       const context = { ...logData };
-      delete context.level;
-      delete context.time;
-      delete context.pid;
-      delete context.hostname;
-      delete context.msg;
+      //delete context.level;
+      //delete context.time;
+      //delete context.pid;
+      //delete context.hostname;
+      //delete context.msg;
       
       // Only show context if there are additional fields
       const hasContext = Object.keys(context).length > 0;
@@ -106,40 +100,49 @@ const consoleTransport = {
   }
 };
 
-// Create the logger with a lower level to see debug logs
-const logger = pino({
-  // Set level to 'debug' to ensure we see the response logs
-  level: process.env.LOG_LEVEL || 'debug',
-  base: {
-    pid: process.pid,
-    hostname: process.env.HOSTNAME || 'localhost'
-  },
-  timestamp: () => `,"time":"${formatTimestamp()}"`,
-  formatters: {
-    level(label) {
-      return { level: label };
-    }
-  },
-}, consoleTransport);
+
+const logger = pino(
+  {
+    level: process.env.LOG_LEVEL || 'debug',
+    timestamp: () => `,"time":"${formatTimestamp()}"`,
+    base: {
+      pid: process.pid.toString(),
+      hostname: process.env.HOSTNAME || 'localhost',
+      que:"kjdkjslkdjlksdj"
+      
+    },
+    formatters: {
+      level(label) {
+        return { level: label };
+      },
+    },
+  }, 
+  consoleTransport)
 
 function validateEnv() {
-  // Validate and correct time zone
+
   try {
-    const match = listTimeZones().includes(TIMEZONE);
-    if (!match) {
-      logger.warn(`Invalid timezone format: "${TIMEZONE}" — falling back to "Etc/UTC". See https://en.wikipedia.org/wiki/List_of_tz_database_time_zones for valid IANA time zone identifiers.`);
-      TIMEZONE = 'Etc/UTC';
-      process.env.KRATOS_TIMEZONE = TIMEZONE;
-    } else {
+    // Validate timezone using moment-timezone
+    const isValidTZ = moment.tz.zone(TIMEZONE);
+    if (!isValidTZ) {
+      throw new RangeError(`Invalid timezone: "${TIMEZONE}"`);
+
+    }else{
       logger.info(`Timezone set to "${TIMEZONE}"`);
     }
-  } catch (error) {
-    logger.error(`Error validating timezone: ${error.message}`);
-    TIMEZONE = 'Etc/UTC';
-    process.env.KRATOS_TIMEZONE = TIMEZONE;
+  }
+  catch (error ) {
+    if (error instanceof RangeError) {
+      logger.warn(`Invalid timezone: "${TIMEZONE}" — falling back to "Etc/UTC".`);
+      logger.warn(`It should be a valid IANA time zone identifier. See:`);      
+      logger.warn(`- https://en.wikipedia.org/wiki/List_of_tz_database_time_zones`);
+      logger.warn(`- https://momentjs.com/timezone/`);    
+      logger.warn("");
+      process.env.KRATOS_TIMEZONE = TIMEZONE;
+    }
   }
 
-  // Validate and correct locale
+   // Validate and correct locale
   try {
     const isLocaleValid = Intl.DateTimeFormat.supportedLocalesOf(LOCALE).length > 0;
   
@@ -510,126 +513,3 @@ async function parseKratosError(response: Response, requestId: string): Promise<
     };
   }
 }
-
-// Setup proper shutdown handling
-process.on('SIGINT', () => {
-  logger.info('Received SIGINT signal, shutting down...');
-  process.exit(0);
-});
-
-process.on('SIGTERM', () => {
-  logger.info('Received SIGTERM signal, shutting down...');
-  process.exit(0);
-});
-
-// Try to initialize OpenTelemetry, with a safe fallback
-// Try to initialize OpenTelemetry, with a safe fallback
-import { spawn } from 'child_process';
-import { DateTime } from 'luxon';
-import { listTimeZones } from 'timezone-support';
-import { inspect } from 'util';
-import pino from 'pino';
-// Import the default export from the OpenTelemetry transport
-import pinoOtelTransport from 'pino-opentelemetry-transport';
-
-// Ory Kratos API utilities for Remix
-//const KRATOS_BASE_URL = process.env.KRATOS_PUBLIC_URL || 'http://localhost:4433'
-//let TIMEZONE = process.env.KRATOS_TIMEZONE || 'Etc/UTC';
-//let LOCALE = process.env.LOCALE || 'en-US';
-
-// Rest of your existing code...
-
-// Corrected OpenTelemetry initialization function
-function initializeOpenTelemetry() {
-  try {
-    logger.info('Initializing OpenTelemetry...');
-    
-    // Configure OpenTelemetry with correct endpoints
-    const otelConfig = {
-      serviceName: process.env.SERVICE_NAME || 'kratos-service',
-      serviceVersion: process.env.SERVICE_VERSION || '1.0.0',
-      serviceNamespace: process.env.SERVICE_NAMESPACE || 'default',
-      // Use port 4317 for gRPC protocol (default for OpenTelemetry)
-      endpoint: process.env.OTEL_EXPORTER_OTLP_ENDPOINT || 'http://localhost:4317',
-      // Default to gRPC protocol
-      protocol: process.env.OTEL_EXPORTER_OTLP_PROTOCOL || 'grpc',
-      resourceAttributes: {
-        'deployment.environment': process.env.NODE_ENV || 'development',
-        'service.instance.id': process.env.INSTANCE_ID || '1'
-      },
-      // Add logging configuration
-      logLevel: process.env.OTEL_LOG_LEVEL || 'info',
-      // Enable console exporter for debugging during development
-      enableConsoleExporter: process.env.NODE_ENV !== 'production'
-    };
-    
-    // Check if the default export is a function
-    if (typeof pinoOtelTransport === 'function') {
-      // It's likely a factory function for creating a transport
-      const transport = pinoOtelTransport(otelConfig);
-      logger.info('Created OpenTelemetry transport');
-      return true;
-    } else if (pinoOtelTransport && typeof pinoOtelTransport.default === 'function') {
-      // Some bundlers might not properly handle default exports
-      const transport = pinoOtelTransport.default(otelConfig);
-      logger.info('Created OpenTelemetry transport using nested default');
-      return true;
-    } else if (pinoOtelTransport && typeof pinoOtelTransport.initializeOpenTelemetry === 'function') {
-      // Check if the module has the initialize method
-      pinoOtelTransport.initializeOpenTelemetry(otelConfig);
-      logger.info('OpenTelemetry initialized using initializeOpenTelemetry');
-      return true;
-    } else {
-      // No known initialization method found - let's log what we have
-      logger.info('OpenTelemetry transport found but no known initialization method available');
-      logger.info(`Available methods: ${Object.keys(pinoOtelTransport).join(', ')}`);
-      
-      // Let's try to inspect what's in the default export
-      if (pinoOtelTransport && typeof pinoOtelTransport === 'object') {
-        for (const key in pinoOtelTransport) {
-          logger.info(`Export '${key}' is type: ${typeof pinoOtelTransport[key]}`);
-        }
-      }
-      
-      return false;
-    }
-  } catch (error) {
-    // Handle any errors during setup
-    logger.warn(`OpenTelemetry integration failed: ${error.message}`);
-    logger.warn('Application will continue with console logging only');
-    return false;
-  }
-}
-
-// Initialize OpenTelemetry
-const otelEnabled = initializeOpenTelemetry();
-// Try to initialize OpenTelemetry but don't fail if it doesn't work
-const otelInitialized = initializeOpenTelemetry();
-
-// Export the logger for use in other modules
-export const kratosLogger = {
-  logger,
-  createContextLogger,
-  otelEnabled: otelInitialized,
-  
-  // Log level convenience functions
-  trace: (msg: string, obj?: object) => logger.trace(obj || {}, msg),
-  debug: (msg: string, obj?: object) => logger.debug(obj || {}, msg),
-  info: (msg: string, obj?: object) => logger.info(obj || {}, msg),
-  warn: (msg: string, obj?: object) => logger.warn(obj || {}, msg),
-  error: (msg: string, obj?: object) => logger.error(obj || {}, msg),
-  fatal: (msg: string, obj?: object) => logger.fatal(obj || {}, msg),
-  
-  // Create a scoped logger with component information
-  component: (componentName: string) => {
-    return createContextLogger({ component: componentName });
-  },
-  
-  // Create a logger for a specific operation
-  operation: (operationName: string, componentName?: string) => {
-    return createContextLogger({ 
-      operation: operationName,
-      component: componentName
-    });
-  }
-};
