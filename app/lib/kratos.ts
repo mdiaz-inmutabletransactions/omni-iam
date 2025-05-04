@@ -5,25 +5,26 @@ import pino1 from 'pino';
 import  pretty from 'pino-pretty';
 import moment from 'moment-timezone';
 
-// Ory Kratos API utilities for Remix
-const KRATOS_BASE_URL = process.env.KRATOS_PUBLIC_URL || 'http://localhost:4433'
-let TIMEZONE = process.env.KRATOS_TIMEZONE || 'Etc/UTC';
-let LOCALE = process.env.LOCALE || 'en-US';
+import {ViteEnv as env} from "../core/ViteEnv"
+
+
+const KRATOS_BASE_URL = env.KARTOS_BASE_URL 
+let TIMEZONE = env.TIMEZONE 
+let LOCALE = env.LOCALE 
 
 // Format timestamp for logs - with better error handling
 function formatTimestamp(): string {
   try {
- 
-    let timezone = TIMEZONE;
-     
+      
     const locale = LOCALE || 'en-US';
-    const dt = DateTime.utc().setZone(timezone).setLocale(locale);
+    const dt = DateTime.utc().setZone(TIMEZONE).setLocale(locale);
     
     if (!dt.isValid) {
       return new Date().toUTCString();
     }
     
     return dt.toLocaleString(DateTime.DATETIME_FULL);
+
   } catch (error) {
     return new Date().toUTCString();
   }

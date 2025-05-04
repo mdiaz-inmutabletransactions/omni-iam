@@ -129,6 +129,6 @@ export type EnvSchema = {
   }
   
   // Public interface
-  export const env = ViteEnvManager.get();
+  export const ViteEnv = ViteEnvManager.get();
   export const setEnv = ViteEnvManager.set;
   export const reloadEnv = ViteEnvManager.reload;
