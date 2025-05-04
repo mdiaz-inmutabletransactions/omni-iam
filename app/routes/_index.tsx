@@ -4,7 +4,7 @@ import { useLoaderData, useOutletContext } from "@remix-run/react";
 import {initLoginFlow} from "../lib/kratos";
 import { TerminalSquare } from "lucide-react";
 
-import { env, EnvSchema } from "~/core/env/env";
+import { env, EnvSchema } from "~/core/ViteEnv";
 
 export const meta: MetaFunction = () => {
   return [
