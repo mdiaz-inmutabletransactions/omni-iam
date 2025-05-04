@@ -122,8 +122,13 @@ export type EnvSchema = {
     }
   
 
+    public static reload(): void {
+      ViteEnvManager.instance = new ViteEnvManager();
+    }
+
   }
   
   // Public interface
   export const env = ViteEnvManager.get();
   export const setEnv = ViteEnvManager.set;
+  export const reloadEnv = ViteEnvManager.reload;
