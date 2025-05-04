@@ -1,8 +1,10 @@
 import type { LoaderFunction, MetaFunction } from "@remix-run/node";
 import { Button } from "~/components/ui/button";
-import { useLoaderData } from "@remix-run/react";
+import { useLoaderData, useOutletContext } from "@remix-run/react";
 import {initLoginFlow} from "../lib/kratos";
 import { TerminalSquare } from "lucide-react";
+
+import { env, EnvSchema } from "~/core/env/env";
 
 export const meta: MetaFunction = () => {
   return [
@@ -14,12 +16,16 @@ export const meta: MetaFunction = () => {
 
 export const  loader: LoaderFunction = async () => {
   const loginFlow =  await initLoginFlow(true); 
+  const envP = env.KARTOS_BASE_URL
   return {loginFlow};
 }
 
- export default function Index() {
 
+ export default function Index() {
+  
   const { loginFlow } = useLoaderData<typeof loader>();
+  //const {env:EnvSchema}  = useLoaderData<typeof envLoader>();
+
   
   return (
     <div className="flex h-screen items-center justify-center">
@@ -29,6 +35,7 @@ export const  loader: LoaderFunction = async () => {
             Welcome to <span className="sr-only">Remix</span>
           </h1>
           <Button>hello, I am a Shadcn button. Flow ID:  {loginFlow.id}</Button>
+          <Button>env: {env.VITE_LOCALE}</Button>
           <div className="h-[144px] w-[434px]">
             <img
               src="/logo-light.png"
