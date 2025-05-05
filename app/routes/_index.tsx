@@ -4,7 +4,7 @@ import { useLoaderData, useOutletContext } from "@remix-run/react";
 import {initLoginFlow} from "../lib/kratos";
 import { TerminalSquare } from "lucide-react";
 
-import { env, EnvSchema } from "~/core/ViteEnv";
+import { ViteEnv } from "~/core/ViteEnv/index";
 
 export const meta: MetaFunction = () => {
   return [
@@ -16,7 +16,7 @@ export const meta: MetaFunction = () => {
 
 export const  loader: LoaderFunction = async () => {
   const loginFlow =  await initLoginFlow(true); 
-  const envP = env.KARTOS_BASE_URL
+
   return {loginFlow};
 }
 
@@ -35,7 +35,7 @@ export const  loader: LoaderFunction = async () => {
             Welcome to <span className="sr-only">Remix</span>
           </h1>
           <Button>hello, I am a Shadcn button. Flow ID:  {loginFlow.id}</Button>
-          <Button>env: {env.VITE_LOCALE}</Button>
+          <Button>env: {ViteEnv.KRATOS_BASE_URL}</Button>
           <div className="h-[144px] w-[434px]">
             <img
               src="/logo-light.png"

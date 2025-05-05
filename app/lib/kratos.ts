@@ -1,182 +1,41 @@
 import { DateTime } from 'luxon';
 import { inspect } from 'util';
-import pino from 'pino';
-import pino1 from 'pino';
-import  pretty from 'pino-pretty';
+
 import moment from 'moment-timezone';
+import {ViteEnv as env} from "../core/ViteEnv/index"
+import { logger } from '../core/Observability/logs';
 
-import {ViteEnv as env} from "../core/ViteEnv"
-
-
-const KRATOS_BASE_URL = env.KARTOS_BASE_URL 
-let TIMEZONE = env.TIMEZONE 
-let LOCALE = env.LOCALE 
-
-// Format timestamp for logs - with better error handling
-function formatTimestamp(): string {
-  try {
-      
-    const locale = LOCALE || 'en-US';
-    const dt = DateTime.utc().setZone(TIMEZONE).setLocale(locale);
-    
-    if (!dt.isValid) {
-      return new Date().toUTCString();
-    }
-    
-    return dt.toLocaleString(DateTime.DATETIME_FULL);
-
-  } catch (error) {
-    return new Date().toUTCString();
-  }
-}
-
-// Map pino level numbers to level names
-const LEVEL_NAMES = {
-  10: 'TRACE',
-  20: 'DEBUG',
-  30: 'INFO ',
-  40: 'WARN ',
-  50: 'ERROR',
-  60: 'FATAL'
-};
-
-// Create a custom console transport with deep object inspection
-const consoleTransport = {
-  write: (data) => {
-    try {
-      // Parse JSON if it's a string
-      const logData = typeof data === 'string' ? JSON.parse(data) : data;
-      
-      // Format message with timestamp
-      const timestamp = formatTimestamp();
-      const level = logData.level;
-      
-      // Get the proper level name from our mapping
-      const levelName = LEVEL_NAMES[level] || 'INFO ';
-      
-      // Get the message
-      const message = logData.msg || '';
-      
-      // Remove standard fields for cleaner context output
-      const context = { ...logData };
-      //delete context.level;
-      //delete context.time;
-      //delete context.pid;
-      //delete context.hostname;
-      //delete context.msg;
-      
-      // Only show context if there are additional fields
-      const hasContext = Object.keys(context).length > 0;
-      
-      // Format the log with deep inspection of objects
-      const formattedMessage = `[${timestamp}] ${levelName} ${message}`;
-      
-      if (level >= 50) { // error or fatal
-        console.error(formattedMessage);
-        if (hasContext) {
-          console.error(inspect(context, { depth: null, colors: true }));
-        }
-      } else if (level >= 40) { // warn
-        console.warn(formattedMessage);
-        if (hasContext) {
-          console.warn(inspect(context, { depth: null, colors: true }));
-        }
-      } else if (level >= 30) { // info
-        console.info(formattedMessage);
-        if (hasContext) {
-          console.info(inspect(context, { depth: null, colors: true }));
-        }
-      } else { // debug or trace
-        console.log(formattedMessage);
-        if (hasContext) {
-          console.log(inspect(context, { depth: null, colors: true }));
-        }
-      }
-    } catch (error) {
-      // Fallback if JSON parsing fails
-      console.log(data);
-    }
-    
-    return true;
-  }
-};
+const KRATOS_BASE_URL = env.KRATOS_BASE_URL;
+const TIMEZONE = env.TIMEZONE 
+const LOCALE = env.LOCALE 
 
 
-const logger = pino(
-  {
-    level: process.env.LOG_LEVEL || 'debug',
-    timestamp: () => `,"time":"${formatTimestamp()}"`,
-    base: {
-      pid: process.pid.toString(),
-      hostname: process.env.HOSTNAME || 'localhost',
-      que:"kjdkjslkdjlksdj"
-      
-    },
-    formatters: {
-      level(label) {
-        return { level: label };
-      },
-    },
-  }, 
-  consoleTransport)
 
-function validateEnv() {
-
-  try {
-    // Validate timezone using moment-timezone
-    const isValidTZ = moment.tz.zone(TIMEZONE);
-    if (!isValidTZ) {
-      throw new RangeError(`Invalid timezone: "${TIMEZONE}"`);
-
-    }else{
-      logger.info(`Timezone set to "${TIMEZONE}"`);
-    }
-  }
-  catch (error ) {
-    if (error instanceof RangeError) {
-      logger.warn(`Invalid timezone: "${TIMEZONE}" — falling back to "Etc/UTC".`);
-      logger.warn(`It should be a valid IANA time zone identifier. See:`);      
-      logger.warn(`- https://en.wikipedia.org/wiki/List_of_tz_database_time_zones`);
-      logger.warn(`- https://momentjs.com/timezone/`);    
-      logger.warn("");
-      process.env.KRATOS_TIMEZONE = TIMEZONE;
-    }
-  }
-
-   // Validate and correct locale
-  try {
-    const isLocaleValid = Intl.DateTimeFormat.supportedLocalesOf(LOCALE).length > 0;
-  
-    if (!isLocaleValid) {
-      throw new RangeError(`Invalid locale: "${LOCALE}"`);
-    }
-  
-    logger.info(`Locale set to "${LOCALE}"`);
-  } catch (err) {
-    logger.warn(`Invalid locale: "${LOCALE}" — falling back to "en-US".`);
-    logger.warn(`It should be a valid locale identifier. See:`);
-    logger.warn(`- https://en.wikipedia.org/wiki/ISO_639-1`);
-    logger.warn(`- https://en.wikipedia.org/wiki/Locale_(computer_software)`);
-    logger.warn(`- https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Intl/Locale`);
-    LOCALE = 'en-US';
-    process.env.LOCALE = LOCALE;
-  }
-}
-
-// Run validation once at app startup
-validateEnv();
-
-// Create a child logger with span context for distributed tracing
+// Create a context logger that adds metadata to each log entry
 function createContextLogger(context: Record<string, any> = {}) {
-  // Add trace and span IDs if available from current context
-  const enhancedContext = {
-    ...context,
-    // These will be populated by OpenTelemetry if tracing is active
-    'trace.id': context.traceId || undefined,
-    'span.id': context.spanId || undefined,
+  return {
+    info: (msg: string | object, ...args: any[]) => {
+      if (typeof msg === 'object') {
+        logger.info({ ...msg, ...context }, ...args);
+      } else {
+        logger.info({ msg, ...context }, ...args);
+      }
+    },
+    warn: (msg: string | object, ...args: any[]) => {
+      if (typeof msg === 'object') {
+        logger.warn({ ...msg, ...context }, ...args);
+      } else {
+        logger.warn({ msg, ...context }, ...args);
+      }
+    },
+    error: (msg: string | object, ...args: any[]) => {
+      if (typeof msg === 'object') {
+        logger.error({ ...msg, ...context }, ...args);
+      } else {
+        logger.error({ msg, ...context }, ...args);
+      }
+    }
   };
-  
-  return logger.child(enhancedContext);
 }
 
 // Common headers for Kratos API requests
