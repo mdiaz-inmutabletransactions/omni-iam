@@ -42,7 +42,8 @@ export type EnvSchema = {
   OTEL_SERVICE_VERSION: string;
   OTEL_EXPORTER_OTLP_ENDPOINT: string;
   OTEL_EXPORTER_OTLP_HEADERS?: string;
-  OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT?: number;
+  // Make this optional in the type definition
+  OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT?: number; 
 };
 
 const defaults: Required<EnvSchema> = {
@@ -79,131 +80,171 @@ const defaults: Required<EnvSchema> = {
   OTEL_SERVICE_VERSION: '1.0.0',
   OTEL_EXPORTER_OTLP_ENDPOINT: 'http://localhost:4317',
   OTEL_EXPORTER_OTLP_HEADERS: '',
-  OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT: undefined,
+  // Use a specific number value instead of undefined
+  OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT: 8192,
 };
 
 // Generic validator function type
 type GenericValidator = (value: any) => { valid: boolean; message?: string };
 
+// Make sure to include ALL validators - existing and new
 const validators: Record<keyof EnvSchema, GenericValidator> = {
-  // Existing validators...
-  
-  // Logging validators
-  LOG_LEVEL: (value: string) => ({
-      valid: ['trace', 'debug', 'info', 'warn', 'error', 'fatal'].includes(value),
-      message: 'Log level must be one of: trace, debug, info, warn, error, fatal'
-  }),
-  LOG_TARGETS: (value: string) => ({
-      valid: value.split(',').every(t => ['console', 'file', 'opentelemetry'].includes(t.trim())),
-      message: 'Log targets must be a comma-separated list of: console, file, opentelemetry'
-  }),
-  LOG_FORMAT: (value: string) => ({
-      valid: ['json', 'pretty'].includes(value),
-      message: 'Log format must be either json or pretty'
-  }),
-  LOG_FILE_PATH: (value: string) => ({
-      valid: value.length > 0,
-      message: 'Log file path must not be empty'
-  }),
-  LOG_FILE_ROTATION: (value: boolean) => ({
-      valid: typeof value === 'boolean',
-      message: 'Log file rotation must be a boolean'
-  }),
-  LOG_MAX_SIZE: (value: number) => ({
-      valid: value > 0,
-      message: 'Log max size must be greater than 0'
-  }),
-  LOG_INCLUDE_TIMESTAMP: (value: boolean) => ({
-      valid: typeof value === 'boolean',
-      message: 'Log include timestamp must be a boolean'
-  }),
-  LOG_INCLUDE_HOSTNAME: (value: boolean) => ({
-      valid: typeof value === 'boolean',
-      message: 'Log include hostname must be a boolean'
-  }),
-  CORRELATION_ID_HEADER: (value: string) => ({
-      valid: value.length > 0,
-      message: 'Correlation ID header must not be empty'
-  }),
-  REDACT_FIELDS: (value: string) => ({
-      valid: value.length > 0,
-      message: 'Redact fields must not be empty'
-  }),
-  
-  // OpenTelemetry validators
-  OTEL_ENABLED: (value: boolean) => ({
-      valid: typeof value === 'boolean',
-      message: 'OTEL enabled must be a boolean'
-  }),
-  OTEL_SERVICE_NAME: (value: string) => ({
-      valid: value.length > 0,
-      message: 'OTEL service name must not be empty'
-  }),
-  OTEL_SERVICE_VERSION: (value: string) => ({
-      valid: value.length > 0,
-      message: 'OTEL service version must not be empty'
-  }),
-  OTEL_EXPORTER_OTLP_ENDPOINT: (value: string) => ({
-      valid: value.length > 0,
-      message: 'OTEL exporter OTLP endpoint must not be empty'
-  }),
-  OTEL_EXPORTER_OTLP_HEADERS: (value?: string) => ({
-      valid: true, // Optional
-      message: ''
-  }),
-  OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT: (value?: number) => ({
-      valid: value === undefined || value > 0,
-      message: 'OTEL attribute value length limit must be greater than 0'
-  }),
+    // Existing validators - include these from your original code
+    SERVER_SECRET: (value: string) => ({
+        valid: value.length >= 32,
+        message: 'Server secret must be at least 32 characters'
+    }),
+    DATABASE_URL: (value: string) => ({
+        valid: value.startsWith('postgres://') || value.startsWith('mysql://'),
+        message: 'Invalid database URL format'
+    }),
+    TIMEZONE: (value: string) => ({
+        valid: Intl.supportedValuesOf('timeZone').includes(value),
+        message: 'Unsupported timezone'
+    }),
+    LOCALE: (value: string) => ({
+        valid: /^[a-z]{2}-[A-Z]{2}$/.test(value),
+        message: 'Locale must be in format xx-XX'
+    }),
+    KRATOS_BASE_URL: (value: string) => ({
+        valid: /^https?:\/\/.+/i.test(value),
+        message: 'Invalid URL format'
+    }),
+    VITE_PUBLIC_API_URL: (value: string) => ({
+        valid: /^https?:\/\/.+/i.test(value),
+        message: 'Invalid API URL format'
+    }),
+    VITE_PUBLIC_ENV: (value: 'development' | 'production' | 'test') => ({
+        valid: ['development', 'production', 'test'].includes(value),
+        message: 'Environment must be development/production/test'
+    }),
+    VITE_DEBUG_MODE: (value: boolean) => ({
+        valid: typeof value === 'boolean',
+        message: 'Debug mode must be boolean'
+    }),
+    VITE_LOCALE: (value?: string) => ({
+        valid: value === undefined || /^[a-z]{2}-[A-Z]{2}$/.test(value),
+        message: 'Locale must be in format xx-XX'
+    }),
+    
+    // Logging validators
+    LOG_LEVEL: (value: string) => ({
+        valid: ['trace', 'debug', 'info', 'warn', 'error', 'fatal'].includes(value),
+        message: 'Log level must be one of: trace, debug, info, warn, error, fatal'
+    }),
+    LOG_TARGETS: (value: string) => ({
+        valid: value.split(',').every(t => ['console', 'file', 'opentelemetry'].includes(t.trim())),
+        message: 'Log targets must be a comma-separated list of: console, file, opentelemetry'
+    }),
+    LOG_FORMAT: (value: string) => ({
+        valid: ['json', 'pretty'].includes(value),
+        message: 'Log format must be either json or pretty'
+    }),
+    LOG_FILE_PATH: (value: string) => ({
+        valid: value.length > 0,
+        message: 'Log file path must not be empty'
+    }),
+    LOG_FILE_ROTATION: (value: boolean) => ({
+        valid: typeof value === 'boolean',
+        message: 'Log file rotation must be a boolean'
+    }),
+    LOG_MAX_SIZE: (value: number) => ({
+        valid: value > 0,
+        message: 'Log max size must be greater than 0'
+    }),
+    LOG_INCLUDE_TIMESTAMP: (value: boolean) => ({
+        valid: typeof value === 'boolean',
+        message: 'Log include timestamp must be a boolean'
+    }),
+    LOG_INCLUDE_HOSTNAME: (value: boolean) => ({
+        valid: typeof value === 'boolean',
+        message: 'Log include hostname must be a boolean'
+    }),
+    CORRELATION_ID_HEADER: (value: string) => ({
+        valid: value.length > 0,
+        message: 'Correlation ID header must not be empty'
+    }),
+    REDACT_FIELDS: (value: string) => ({
+        valid: value.length > 0,
+        message: 'Redact fields must not be empty'
+    }),
+    
+    // OpenTelemetry validators
+    OTEL_ENABLED: (value: boolean) => ({
+        valid: typeof value === 'boolean',
+        message: 'OTEL enabled must be a boolean'
+    }),
+    OTEL_SERVICE_NAME: (value: string) => ({
+        valid: value.length > 0,
+        message: 'OTEL service name must not be empty'
+    }),
+    OTEL_SERVICE_VERSION: (value: string) => ({
+        valid: value.length > 0,
+        message: 'OTEL service version must not be empty'
+    }),
+    OTEL_EXPORTER_OTLP_ENDPOINT: (value: string) => ({
+        valid: value.length > 0,
+        message: 'OTEL exporter OTLP endpoint must not be empty'
+    }),
+    OTEL_EXPORTER_OTLP_HEADERS: (value: string) => ({
+        valid: true, // Allow any value including empty string
+        message: ''
+    }),
+    OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT: (value?: number) => ({
+        valid: value === undefined || value > 0,
+        message: 'OTEL attribute value length limit must be greater than 0'
+    }),
 };
+
 
 type Transformer<T> = {
   parse: (raw: string) => T;
   validate: GenericValidator;
 };
 
+// Add transformers for boolean and number types
 const transformers: Partial<Record<keyof EnvSchema, Transformer<any>>> = {
-  // Existing transformers...
-  
-  // Logging transformers
-  LOG_LEVEL: {
-      parse: (v) => v,
-      validate: validators.LOG_LEVEL
-  },
-  LOG_TARGETS: {
-      parse: (v) => v,
-      validate: validators.LOG_TARGETS
-  },
-  LOG_FORMAT: {
-      parse: (v) => v,
-      validate: validators.LOG_FORMAT
-  },
-  LOG_FILE_ROTATION: {
-      parse: (v) => v === 'true',
-      validate: validators.LOG_FILE_ROTATION
-  },
-  LOG_MAX_SIZE: {
-      parse: (v) => parseInt(v, 10),
-      validate: validators.LOG_MAX_SIZE
-  },
-  LOG_INCLUDE_TIMESTAMP: {
-      parse: (v) => v === 'true',
-      validate: validators.LOG_INCLUDE_TIMESTAMP
-  },
-  LOG_INCLUDE_HOSTNAME: {
-      parse: (v) => v === 'true',
-      validate: validators.LOG_INCLUDE_HOSTNAME
-  },
-  
-  // OpenTelemetry transformers
-  OTEL_ENABLED: {
-      parse: (v) => v === 'true',
-      validate: validators.OTEL_ENABLED
-  },
-  OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT: {
-      parse: (v) => v ? parseInt(v, 10) : undefined,
-      validate: validators.OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT
-  },
+    // Include existing transformers from your original code
+    
+    // Logging transformers
+    LOG_LEVEL: {
+        parse: (v) => v,
+        validate: validators.LOG_LEVEL
+    },
+    LOG_TARGETS: {
+        parse: (v) => v,
+        validate: validators.LOG_TARGETS
+    },
+    LOG_FORMAT: {
+        parse: (v) => v,
+        validate: validators.LOG_FORMAT
+    },
+    LOG_FILE_ROTATION: {
+        parse: (v) => v === 'true',
+        validate: validators.LOG_FILE_ROTATION
+    },
+    LOG_MAX_SIZE: {
+        parse: (v) => parseInt(v, 10),
+        validate: validators.LOG_MAX_SIZE
+    },
+    LOG_INCLUDE_TIMESTAMP: {
+        parse: (v) => v === 'true',
+        validate: validators.LOG_INCLUDE_TIMESTAMP
+    },
+    LOG_INCLUDE_HOSTNAME: {
+        parse: (v) => v === 'true',
+        validate: validators.LOG_INCLUDE_HOSTNAME
+    },
+    
+    // OpenTelemetry transformers
+    OTEL_ENABLED: {
+        parse: (v) => v === 'true',
+        validate: validators.OTEL_ENABLED
+    },
+    OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT: {
+        parse: (v: string) => v ? parseInt(v, 10) : 8192, // Always return a number
+        validate: validators.OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT
+    },
 };
 
 class ViteEnvManager {
