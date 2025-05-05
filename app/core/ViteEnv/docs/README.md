@@ -1,3 +1,5 @@
+0.1.0-beta.1 
+
 with all the following text create a READme.env  for a technician description of the implementation and how to use. remember that the name of the component is ViteEnvManager  add full examples for transformets and validator, add examples on serverside and cliend side in remix JS  :     .... Key Benefits:
 Single Source of Truth - All env vars managed in one place
 

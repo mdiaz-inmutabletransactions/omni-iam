@@ -1,4 +1,5 @@
 README - ViteEnvManager Implementation Guide
+0.1.0-beta.1 
 Overview
 The ViteEnvManager is a robust, type-safe environment variable management system designed for Vite + Remix applications. It provides centralized control over environment variables with full TypeScript support, validation, and transformation capabilities.
 

@@ -1,13 +1,27 @@
 import {
+  json,
   Links,
   Meta,
   Outlet,
   Scripts,
   ScrollRestoration,
+  useLoaderData,
 } from "@remix-run/react";
 import type { LinksFunction } from "@remix-run/node";
 
+import { ViteEnv } from "~/core/ViteEnv/index";
+
 import "./tailwind.css";
+
+
+export const loader = async () => {
+  return json({
+    env: {
+      KRATOS_BASE_URL: ViteEnv.KRATOS_BASE_URL,
+      // Add any other env vars you want to expose
+    }
+  });
+};
 
 export const links: LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -23,6 +37,8 @@ export const links: LinksFunction = () => [
 ];
 
 export function Layout({ children }: { children: React.ReactNode }) {
+
+
   return (
     <html lang="en">
       <head>
@@ -41,5 +57,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
-  return <Outlet />;
+  const env = useLoaderData<typeof loader>();
+  return <Outlet context={env}/>;
 }

@@ -1,4 +1,6 @@
-// src/core/env.ts
+/// <reference path="./types/env.d.ts" />
+
+
 type EnvSource = 'env' | 'default' | 'manual';
 
 type EnvValue<T> = {

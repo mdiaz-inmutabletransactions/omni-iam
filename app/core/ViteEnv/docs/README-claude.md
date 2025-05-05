@@ -1,5 +1,5 @@
 # ViteEnvManager
-
+0.1.0-beta.1 
 A robust, type-safe environment variable manager for Vite applications.
 
 ## Key Benefits

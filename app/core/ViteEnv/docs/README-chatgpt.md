@@ -1,4 +1,4 @@
-ViteEnvManager
+ViteEnvManager (0.1.0-beta.1 )
 A secure, type-safe, and transformer-ready environment manager for Vite-based applications like Remix.
 
 🚀 Key Benefits

@@ -4,7 +4,16 @@ import { useLoaderData, useOutletContext } from "@remix-run/react";
 import {initLoginFlow} from "../lib/kratos";
 import { TerminalSquare } from "lucide-react";
 
+
 import { ViteEnv } from "~/core/ViteEnv/index";
+
+
+type EnvContextType = {
+  env: {
+    KRATOS_BASE_URL: string;
+    // Add other env vars as needed
+  }
+};
 
 export const meta: MetaFunction = () => {
   return [
@@ -14,18 +23,21 @@ export const meta: MetaFunction = () => {
 };
 
 
-export const  loader: LoaderFunction = async () => {
-  const loginFlow =  await initLoginFlow(true); 
-
-  return {loginFlow};
+export const loader: LoaderFunction = async () => {
+  const loginFlow = await initLoginFlow(true); 
+  
+  // Get the server environment variable here for consistency
+  const kratosBaseUrl = ViteEnv.KRATOS_BASE_URL;
+  
+  return { loginFlow, kratosBaseUrl };
 }
 
 
  export default function Index() {
-  
-  const { loginFlow } = useLoaderData<typeof loader>();
-  //const {env:EnvSchema}  = useLoaderData<typeof envLoader>();
 
+  const  {env}  = useOutletContext<EnvContextType>();
+  
+  const { loginFlow, kratosBaseUrl } = useLoaderData<typeof loader>();
   
   return (
     <div className="flex h-screen items-center justify-center">
@@ -35,7 +47,9 @@ export const  loader: LoaderFunction = async () => {
             Welcome to <span className="sr-only">Remix</span>
           </h1>
           <Button>hello, I am a Shadcn button. Flow ID:  {loginFlow.id}</Button>
-          <Button>env: {ViteEnv.KRATOS_BASE_URL}</Button>
+          <Button>env SSR: {kratosBaseUrl}</Button>
+          <Button>env context: {env.KRATOS_BASE_URL}</Button>
+          
           <div className="h-[144px] w-[434px]">
             <img
               src="/logo-light.png"
