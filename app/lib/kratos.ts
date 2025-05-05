@@ -1,51 +1,19 @@
-import { DateTime } from 'luxon';
-import { inspect } from 'util';
+// app/lib/kratos.ts - update to use Observability
 
-import moment from 'moment-timezone';
-import {ViteEnv as env} from "../core/ViteEnv/index"
-import { logger } from '../core/Observability/logs';
+import { ViteEnv } from "../core/ViteEnv/index";
+// Replace the existing logger import with our new Observability module
+import { 
+  createComponentLogger, 
+  createOperationLogger,
+  redactSensitiveInfo
+} from '../core/Observability';
 
-const KRATOS_BASE_URL = env.KRATOS_BASE_URL;
-const TIMEZONE = env.TIMEZONE 
-const LOCALE = env.LOCALE 
+const KRATOS_BASE_URL = ViteEnv.KRATOS_BASE_URL;
 
+// Create a component-specific logger for Kratos
+const kratosLogger = createComponentLogger('kratos-service');
 
-
-// Create a context logger that adds metadata to each log entry
-function createContextLogger(context: Record<string, any> = {}) {
-  return {
-    info: (msg: string | object, ...args: any[]) => {
-      if (typeof msg === 'object') {
-        logger.info({ ...msg, ...context }, ...args);
-      } else {
-        logger.info({ msg, ...context }, ...args);
-      }
-    },
-    warn: (msg: string | object, ...args: any[]) => {
-      if (typeof msg === 'object') {
-        logger.warn({ ...msg, ...context }, ...args);
-      } else {
-        logger.warn({ msg, ...context }, ...args);
-      }
-    },
-    error: (msg: string | object, ...args: any[]) => {
-      if (typeof msg === 'object') {
-        logger.error({ ...msg, ...context }, ...args);
-      } else {
-        logger.error({ msg, ...context }, ...args);
-      }
-    }
-  };
-}
-
-// Common headers for Kratos API requests
-const kratosHeaders = {
-  'Accept': 'application/json',
-  'Content-Type': 'application/json',
-  credentials: 'include' as const,
-}
-
-// Types for Kratos responses
+// Types for Kratos responses (keep these as they are)
 export interface KratosFlow {
   id: string
   ui: {
@@ -67,27 +35,29 @@ export interface KratosError {
   }
 }
 
-// Middleware types
-type RequestMiddleware = (url: string, options: RequestInit) => [string, RequestInit]
-type ResponseMiddleware<T = any> = (response: Response) => Promise<T | Response>
+// Common headers for Kratos API requests
+const kratosHeaders = {
+  'Accept': 'application/json',
+  'Content-Type': 'application/json',
+  credentials: 'include' as const,
+}
 
-// Debug logging middleware using Pino with OpenTelemetry context
+// Debug logging middleware using Observability
 const debugLoggingMiddleware = {
-  request: (requestId: string = crypto.randomUUID()): RequestMiddleware => (url, options) => {
-    const requestLogger = createContextLogger({ 
-      requestId, 
+  request: (requestId: string = crypto.randomUUID()) => (url: string, options: RequestInit): [string, RequestInit] => {
+    // Create an operation-specific logger for this request
+    const requestLogger = createOperationLogger('kratos-request', requestId, {
       method: options.method || 'GET',
       url,
-      component: 'kratosFetch',
       'http.method': options.method || 'GET',
       'http.url': url,
       'http.request_id': requestId
     });
     
-    // Log at INFO level instead of DEBUG to ensure it's always visible
+    // Log at INFO level
     requestLogger.info({
       msg: 'Kratos API Request',
-      headers: options.headers,
+      headers: redactSensitiveInfo(options.headers),
       payload: options.body ? tryParseJSON(options.body as string) : undefined
     });
     
@@ -105,17 +75,16 @@ const debugLoggingMiddleware = {
     return [url, enhancedOptions];
   },
   
-  response: <T>(requestId: string = crypto.randomUUID()): ResponseMiddleware<T> => async (response) => {
+  response: <T>(requestId: string = crypto.randomUUID()) => async (response: Response): Promise<Response> => {
     const clone = response.clone();
     const clientCorrelationId = response.headers.get('X-Correlation-ID') || requestId;
     const serverCorrelationId = response.headers.get('Set-Correlation-ID') || 'none';
     
-    const responseLogger = createContextLogger({ 
-      requestId: clientCorrelationId,
+    // Create a response-specific logger
+    const responseLogger = createOperationLogger('kratos-response', clientCorrelationId, {
       correlationId: serverCorrelationId,
       status: response.status,
       url: response.url,
-      component: 'kratosFetch',
       'http.status_code': response.status,
       'http.response_url': response.url
     });
@@ -131,14 +100,13 @@ const debugLoggingMiddleware = {
       }
     }
     
-    // Always log at INFO level instead of debug/error to ensure visibility
+    // Log at INFO level
     responseLogger.info({
       msg: `Kratos API Response ${response.ok ? '(Success)' : '(Error)'}`,
       headers: Object.fromEntries(clone.headers.entries()),
-      body: responseBody
+      body: redactSensitiveInfo(responseBody)
     });
 
-    // Return the original response to allow chaining
     return response;
   }
 };
@@ -157,18 +125,17 @@ async function kratosFetch<T = any>(
   endpoint: string,
   options: RequestInit = {},
   middlewares?: {
-    request?: RequestMiddleware[]
-    response?: ResponseMiddleware<T>[]
+    request?: Array<(url: string, options: RequestInit) => [string, RequestInit]>
+    response?: Array<(response: Response) => Promise<T | Response>>
   },
   debug = true,
   retryCount = 0
 ): Promise<T> {
   const requestId = crypto.randomUUID();
-  const requestLogger = createContextLogger({ 
-    requestId, 
+  // Use an operation logger for the fetch operation
+  const requestLogger = createOperationLogger('kratos-fetch', requestId, {
     endpoint,
-    operation: 'kratosFetch',
-    component: 'kratos-api'
+    retry: retryCount
   });
 
   try {
@@ -233,9 +200,8 @@ async function kratosFetch<T = any>(
 // Initialize a login flow
 export async function initLoginFlow(debug = false): Promise<KratosFlow> {
   const requestId = crypto.randomUUID();
-  const flowLogger = createContextLogger({ 
-    requestId, 
-    operation: 'initLoginFlow',
+  // Use an operation logger for the login flow
+  const flowLogger = createOperationLogger('init-login-flow', requestId, {
     component: 'authentication',
     'event.name': 'login.flow.init'
   });
@@ -264,9 +230,8 @@ export async function initLoginFlow(debug = false): Promise<KratosFlow> {
 // Initialize a registration flow
 export async function initRegistrationFlow(debug = false): Promise<KratosFlow> {
   const requestId = crypto.randomUUID();
-  const flowLogger = createContextLogger({ 
-    requestId, 
-    operation: 'initRegistrationFlow',
+  // Use an operation logger for the registration flow
+  const flowLogger = createOperationLogger('init-registration-flow', requestId, {
     component: 'authentication',
     'event.name': 'registration.flow.init'
   });
@@ -285,9 +250,8 @@ export async function initRegistrationFlow(debug = false): Promise<KratosFlow> {
 // Submit login form
 export async function submitLogin(flowId: string, body: any, debug = false): Promise<any> {
   const requestId = crypto.randomUUID();
-  const loginLogger = createContextLogger({ 
-    requestId, 
-    operation: 'submitLogin', 
+  // Use an operation logger for the login submission
+  const loginLogger = createOperationLogger('submit-login', requestId, { 
     flowId,
     component: 'authentication',
     'event.name': 'login.submit',
@@ -329,8 +293,8 @@ export async function submitLogin(flowId: string, body: any, debug = false): Pro
 
 // Error handling
 async function parseKratosError(response: Response, requestId: string): Promise<KratosError> {
-  const errorLogger = createContextLogger({ 
-    requestId, 
+  // Use an error-specific logger
+  const errorLogger = createOperationLogger('kratos-error', requestId, { 
     status: response.status,
     url: response.url,
     component: 'error-handler',
