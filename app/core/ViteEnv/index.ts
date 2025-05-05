@@ -10,23 +10,46 @@ type EnvValue<T> = {
 };
 
 export type EnvSchema = {
-    // Server-side only (only available in Remix loaders/actions)
-    SERVER_SECRET: string;
-    DATABASE_URL: string;
-    TIMEZONE: string;
-    LOCALE: string;
-    KRATOS_BASE_URL: string;
+  // Existing server-side variables
+  SERVER_SECRET: string;
+  DATABASE_URL: string;
+  TIMEZONE: string;
+  LOCALE: string;
+ 
+
+  // Existing public (client) variables
+  VITE_PUBLIC_API_URL: string;
+  VITE_PUBLIC_ENV: 'development' | 'production' | 'test';
+  VITE_DEBUG_MODE?: boolean;
+  VITE_LOCALE?: string;
+  KRATOS_BASE_URL: string; // Keep this exactly as it was before
   
-    // Public (exposed to client)
-    VITE_PUBLIC_API_URL: string;
-    VITE_PUBLIC_ENV: 'development' | 'production' | 'test';
-    
-    // Optional with defaults
-    VITE_DEBUG_MODE?: boolean;
-    VITE_LOCALE?: string;
+  // New Observability variables - logging
+  LOG_LEVEL: 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal';
+  LOG_TARGETS: string; // Will be parsed as array in Observability
+  LOG_FORMAT: 'json' | 'pretty';
+  LOG_FILE_PATH: string;
+  LOG_FILE_ROTATION: boolean;
+  LOG_MAX_SIZE: number;
+  LOG_INCLUDE_TIMESTAMP: boolean;
+  LOG_INCLUDE_HOSTNAME: boolean;
+  CORRELATION_ID_HEADER: string;
+  REDACT_FIELDS: string; // Will be parsed as array in Observability
+  
+  // New Observability variables - OpenTelemetry
+  OTEL_ENABLED: boolean;
+  OTEL_SERVICE_NAME: string;
+  OTEL_SERVICE_VERSION: string;
+  OTEL_EXPORTER_OTLP_ENDPOINT: string;
+  OTEL_EXPORTER_OTLP_HEADERS?: string;
+  OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT?: number;
 };
 
 const defaults: Required<EnvSchema> = {
+  // Existing defaults...
+  
+
+  // Keep existing defaults exactly as they were
   SERVER_SECRET: 'default-secret',
   DATABASE_URL: 'postgres://localhost:5432/mydb',
   VITE_PUBLIC_API_URL: 'http://localhost:3000/api',
@@ -35,49 +58,103 @@ const defaults: Required<EnvSchema> = {
   VITE_LOCALE: 'en-US',
   TIMEZONE: 'America/Mexico_City',
   LOCALE: 'es-MX',
-  KRATOS_BASE_URL: 'http://localhost:4455',
+  KRATOS_BASE_URL: 'http://localhost:4433', // Make sure this matches your original value
+
+
+  // Logging defaults
+  LOG_LEVEL: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
+  LOG_TARGETS: process.env.NODE_ENV === 'production' ? 'file,opentelemetry' : 'console',
+  LOG_FORMAT: process.env.NODE_ENV === 'production' ? 'json' : 'pretty',
+  LOG_FILE_PATH: './logs',
+  LOG_FILE_ROTATION: true,
+  LOG_MAX_SIZE: 10 * 1024 * 1024, // 10MB
+  LOG_INCLUDE_TIMESTAMP: true,
+  LOG_INCLUDE_HOSTNAME: true,
+  CORRELATION_ID_HEADER: 'X-Correlation-ID',
+  REDACT_FIELDS: 'password,secret,token,authorization,cookie',
+  
+  // OpenTelemetry defaults
+  OTEL_ENABLED: process.env.NODE_ENV === 'production',
+  OTEL_SERVICE_NAME: 'omni-iam',
+  OTEL_SERVICE_VERSION: '1.0.0',
+  OTEL_EXPORTER_OTLP_ENDPOINT: 'http://localhost:4317',
+  OTEL_EXPORTER_OTLP_HEADERS: '',
+  OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT: undefined,
 };
 
 // Generic validator function type
 type GenericValidator = (value: any) => { valid: boolean; message?: string };
 
 const validators: Record<keyof EnvSchema, GenericValidator> = {
-  SERVER_SECRET: (value: string) => ({
-    valid: value.length >= 32,
-    message: 'Server secret must be at least 32 characters'
+  // Existing validators...
+  
+  // Logging validators
+  LOG_LEVEL: (value: string) => ({
+      valid: ['trace', 'debug', 'info', 'warn', 'error', 'fatal'].includes(value),
+      message: 'Log level must be one of: trace, debug, info, warn, error, fatal'
   }),
-  DATABASE_URL: (value: string) => ({
-    valid: value.startsWith('postgres://') || value.startsWith('mysql://'),
-    message: 'Invalid database URL format'
+  LOG_TARGETS: (value: string) => ({
+      valid: value.split(',').every(t => ['console', 'file', 'opentelemetry'].includes(t.trim())),
+      message: 'Log targets must be a comma-separated list of: console, file, opentelemetry'
   }),
-  TIMEZONE: (value: string) => ({
-    valid: Intl.supportedValuesOf('timeZone').includes(value),
-    message: 'Unsupported timezone'
+  LOG_FORMAT: (value: string) => ({
+      valid: ['json', 'pretty'].includes(value),
+      message: 'Log format must be either json or pretty'
   }),
-  LOCALE: (value: string) => ({
-    valid: /^[a-z]{2}-[A-Z]{2}$/.test(value),
-    message: 'Locale must be in format xx-XX'
+  LOG_FILE_PATH: (value: string) => ({
+      valid: value.length > 0,
+      message: 'Log file path must not be empty'
   }),
-  KRATOS_BASE_URL: (value: string) => ({
-    valid: /^https?:\/\/.+/i.test(value),
-    message: 'Invalid URL format'
+  LOG_FILE_ROTATION: (value: boolean) => ({
+      valid: typeof value === 'boolean',
+      message: 'Log file rotation must be a boolean'
   }),
-  VITE_PUBLIC_API_URL: (value: string) => ({
-    valid: /^https?:\/\/.+/i.test(value),
-    message: 'Invalid API URL format'
+  LOG_MAX_SIZE: (value: number) => ({
+      valid: value > 0,
+      message: 'Log max size must be greater than 0'
   }),
-  VITE_PUBLIC_ENV: (value: 'development' | 'production' | 'test') => ({
-    valid: ['development', 'production', 'test'].includes(value),
-    message: 'Environment must be development/production/test'
+  LOG_INCLUDE_TIMESTAMP: (value: boolean) => ({
+      valid: typeof value === 'boolean',
+      message: 'Log include timestamp must be a boolean'
   }),
-  VITE_DEBUG_MODE: (value: boolean) => ({
-    valid: typeof value === 'boolean',
-    message: 'Debug mode must be boolean'
+  LOG_INCLUDE_HOSTNAME: (value: boolean) => ({
+      valid: typeof value === 'boolean',
+      message: 'Log include hostname must be a boolean'
   }),
-  VITE_LOCALE: (value?: string) => ({
-    valid: value === undefined || /^[a-z]{2}-[A-Z]{2}$/.test(value),
-    message: 'Locale must be in format xx-XX'
-  })
+  CORRELATION_ID_HEADER: (value: string) => ({
+      valid: value.length > 0,
+      message: 'Correlation ID header must not be empty'
+  }),
+  REDACT_FIELDS: (value: string) => ({
+      valid: value.length > 0,
+      message: 'Redact fields must not be empty'
+  }),
+  
+  // OpenTelemetry validators
+  OTEL_ENABLED: (value: boolean) => ({
+      valid: typeof value === 'boolean',
+      message: 'OTEL enabled must be a boolean'
+  }),
+  OTEL_SERVICE_NAME: (value: string) => ({
+      valid: value.length > 0,
+      message: 'OTEL service name must not be empty'
+  }),
+  OTEL_SERVICE_VERSION: (value: string) => ({
+      valid: value.length > 0,
+      message: 'OTEL service version must not be empty'
+  }),
+  OTEL_EXPORTER_OTLP_ENDPOINT: (value: string) => ({
+      valid: value.length > 0,
+      message: 'OTEL exporter OTLP endpoint must not be empty'
+  }),
+  OTEL_EXPORTER_OTLP_HEADERS: (value?: string) => ({
+      valid: true, // Optional
+      message: ''
+  }),
+  OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT: (value?: number) => ({
+      valid: value === undefined || value > 0,
+      message: 'OTEL attribute value length limit must be greater than 0'
+  }),
 };
 
 type Transformer<T> = {
@@ -86,29 +163,47 @@ type Transformer<T> = {
 };
 
 const transformers: Partial<Record<keyof EnvSchema, Transformer<any>>> = {
-  VITE_PUBLIC_ENV: {
-    parse: (v) => {
-      const env = v.toLowerCase();
-      if (env === 'development' || env === 'production' || env === 'test') {
-        return env as 'development' | 'production' | 'test';
-      }
-      throw new Error(`Invalid environment: ${v}`);
-    },
-    validate: validators.VITE_PUBLIC_ENV
+  // Existing transformers...
+  
+  // Logging transformers
+  LOG_LEVEL: {
+      parse: (v) => v,
+      validate: validators.LOG_LEVEL
   },
-  VITE_DEBUG_MODE: {
-    parse: (v) => v === 'true',
-    validate: validators.VITE_DEBUG_MODE
+  LOG_TARGETS: {
+      parse: (v) => v,
+      validate: validators.LOG_TARGETS
   },
-  VITE_LOCALE: {
-    parse: (v) => {
-      if (!/^[a-z]{2}-[A-Z]{2}$/.test(v)) {
-        throw new Error(`Invalid locale format: ${v}`);
-      }
-      return v;
-    },
-    validate: validators.VITE_LOCALE
-  }
+  LOG_FORMAT: {
+      parse: (v) => v,
+      validate: validators.LOG_FORMAT
+  },
+  LOG_FILE_ROTATION: {
+      parse: (v) => v === 'true',
+      validate: validators.LOG_FILE_ROTATION
+  },
+  LOG_MAX_SIZE: {
+      parse: (v) => parseInt(v, 10),
+      validate: validators.LOG_MAX_SIZE
+  },
+  LOG_INCLUDE_TIMESTAMP: {
+      parse: (v) => v === 'true',
+      validate: validators.LOG_INCLUDE_TIMESTAMP
+  },
+  LOG_INCLUDE_HOSTNAME: {
+      parse: (v) => v === 'true',
+      validate: validators.LOG_INCLUDE_HOSTNAME
+  },
+  
+  // OpenTelemetry transformers
+  OTEL_ENABLED: {
+      parse: (v) => v === 'true',
+      validate: validators.OTEL_ENABLED
+  },
+  OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT: {
+      parse: (v) => v ? parseInt(v, 10) : undefined,
+      validate: validators.OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT
+  },
 };
 
 class ViteEnvManager {

@@ -6,7 +6,7 @@ import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-proto';
 import { BatchSpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { ViteEnv } from '../ViteEnv/index';
 import { logger } from './logs';
-// Import the resourceFromAttributes helper from @opentelemetry/resources
+// Import the resourceFromAttributes helper function
 import { resourceFromAttributes } from '@opentelemetry/resources';
 // Import semantic conventions
 import { SemanticResourceAttributes } from '@opentelemetry/semantic-conventions';
@@ -32,33 +32,29 @@ const defaultConfig: TelemetryConfig = {
 // Initialize OpenTelemetry
 export function initializeOpenTelemetry(): void {
   // Skip if disabled
-  if (!process.env.OTEL_ENABLED && !defaultConfig.OTEL_ENABLED) {
+  if (!ViteEnv.OTEL_ENABLED) {
     logger.info('OpenTelemetry is disabled');
     return;
   }
   
   try {
-    // Load configuration
-    const config = loadTelemetryConfig();
-    
     // Setup trace exporter
     const traceExporter = new OTLPTraceExporter({
-      url: config.OTEL_EXPORTER_OTLP_ENDPOINT + '/v1/traces',
-      headers: config.OTEL_EXPORTER_OTLP_HEADERS 
-        ? JSON.parse(config.OTEL_EXPORTER_OTLP_HEADERS) 
+      url: ViteEnv.OTEL_EXPORTER_OTLP_ENDPOINT + '/v1/traces',
+      headers: ViteEnv.OTEL_EXPORTER_OTLP_HEADERS 
+        ? JSON.parse(ViteEnv.OTEL_EXPORTER_OTLP_HEADERS) 
         : undefined,
     });
     
-    // Create resource using resourceFromAttributes helper function
-    // This is the correct way to create a resource in OpenTelemetry v2
-    // This is the custom resource creation
+    // Create custom resource using resourceFromAttributes
+    // This is the proper way to create a custom resource in OpenTelemetry v2
     const resource = resourceFromAttributes({
-      [SemanticResourceAttributes.SERVICE_NAME]: config.OTEL_SERVICE_NAME,
-      [SemanticResourceAttributes.SERVICE_VERSION]: config.OTEL_SERVICE_VERSION,
+      [SemanticResourceAttributes.SERVICE_NAME]: ViteEnv.OTEL_SERVICE_NAME,
+      [SemanticResourceAttributes.SERVICE_VERSION]: ViteEnv.OTEL_SERVICE_VERSION,
       [SemanticResourceAttributes.DEPLOYMENT_ENVIRONMENT]: ViteEnv.VITE_PUBLIC_ENV,
     });
     
-    // Create SDK with auto-instrumentation
+    // Create SDK with auto-instrumentation and our custom resource
     const sdk = new NodeSDK({
       resource: resource,
       spanProcessor: new BatchSpanProcessor(traceExporter),
@@ -71,7 +67,7 @@ export function initializeOpenTelemetry(): void {
     
     // Start OpenTelemetry and register a shutdown handler
     sdk.start();
-    logger.info(`OpenTelemetry initialized for service ${config.OTEL_SERVICE_NAME}`);
+    logger.info(`OpenTelemetry initialized for service ${ViteEnv.OTEL_SERVICE_NAME}`);
     
     // Register shutdown
     process.on('SIGTERM', () => {

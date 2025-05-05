@@ -12,10 +12,10 @@ import {
 } from './logUtils';
 import type { FormatObjectOptions } from './logUtils';
 import { initializeOpenTelemetry } from './opentelemetry';
-import type { TelemetryConfig } from './opentelemetry';
+import { ViteEnv } from '../ViteEnv/index';
 
-// Initialize OpenTelemetry if enabled
-if (typeof process !== 'undefined' && process.env.NODE_ENV === 'production') {
+// Initialize OpenTelemetry if enabled via ViteEnv
+if (ViteEnv.OTEL_ENABLED) {
   initializeOpenTelemetry();
 }
 
@@ -48,5 +48,4 @@ export type {
   LogFormat,
   LogSchema,
   FormatObjectOptions,
-  TelemetryConfig,
 };

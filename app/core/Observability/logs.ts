@@ -1,4 +1,4 @@
-// app/core/Observability/logs.ts
+// app/core/Observability/logs.ts - update to use ViteEnv
 
 import pino from 'pino';
 import { DateTime } from 'luxon';
@@ -41,20 +41,6 @@ export interface LogSchema {
   REDACT_FIELDS: string[];
 }
 
-// Default configuration with proper type
-const defaultConfig: LogSchema = {
-  LOG_LEVEL: (process.env.NODE_ENV === 'production' ? 'info' : 'debug') as LogLevel,
-  LOG_TARGETS: (process.env.NODE_ENV === 'production' ? ['file', 'opentelemetry'] : ['console']) as LogTarget[],
-  LOG_FILE_PATH: './logs',
-  LOG_FILE_ROTATION: true,
-  LOG_MAX_SIZE: 10 * 1024 * 1024, // 10MB
-  LOG_FORMAT: (process.env.NODE_ENV === 'production' ? 'json' : 'pretty') as LogFormat,
-  LOG_INCLUDE_TIMESTAMP: true,
-  LOG_INCLUDE_HOSTNAME: true,
-  CORRELATION_ID_HEADER: 'X-Correlation-ID',
-  REDACT_FIELDS: ['password', 'secret', 'token', 'authorization', 'cookie']
-};
-
 // Type for the logger itself
 export type LoggerInstance = pino.Logger;
 
@@ -64,7 +50,7 @@ export interface LogContext {
 }
 
 // Transport target options type
-interface TransportTargetOption extends pino.TransportTargetOptions {
+interface TransportTargetOption {
   target: string;
   options: Record<string, any>;
 }
@@ -80,52 +66,28 @@ class LogManager {
   }
   
   private loadConfiguration(): LogSchema {
-    // Start with default configuration
-    const config: LogSchema = { ...defaultConfig };
+    // Parse LOG_TARGETS from string to array
+    const logTargets = ViteEnv.LOG_TARGETS.split(',')
+      .map(t => t.trim())
+      .filter(this.isValidLogTarget) as LogTarget[];
     
-    // Override with environment variables if available
-    if (process.env.LOG_LEVEL) {
-      const level = process.env.LOG_LEVEL;
-      if (this.isValidLogLevel(level)) {
-        config.LOG_LEVEL = level;
-      }
-    }
+    // Parse REDACT_FIELDS from string to array
+    const redactFields = ViteEnv.REDACT_FIELDS.split(',')
+      .map(f => f.trim());
     
-    if (process.env.LOG_TARGETS) {
-      const targets = process.env.LOG_TARGETS.split(',')
-        .map(t => t.trim())
-        .filter(this.isValidLogTarget);
-      
-      if (targets.length > 0) {
-        config.LOG_TARGETS = targets;
-      }
-    }
-    
-    if (process.env.LOG_FORMAT) {
-      const format = process.env.LOG_FORMAT;
-      if (this.isValidLogFormat(format)) {
-        config.LOG_FORMAT = format;
-      }
-    }
-    
-    if (process.env.LOG_FILE_PATH) {
-      config.LOG_FILE_PATH = process.env.LOG_FILE_PATH;
-    }
-    
-    if (process.env.REDACT_FIELDS) {
-      config.REDACT_FIELDS = process.env.REDACT_FIELDS.split(',').map(f => f.trim());
-    }
-    
-    // Parse boolean options
-    if (process.env.LOG_INCLUDE_TIMESTAMP !== undefined) {
-      config.LOG_INCLUDE_TIMESTAMP = process.env.LOG_INCLUDE_TIMESTAMP === 'true';
-    }
-    
-    if (process.env.LOG_INCLUDE_HOSTNAME !== undefined) {
-      config.LOG_INCLUDE_HOSTNAME = process.env.LOG_INCLUDE_HOSTNAME === 'true';
-    }
-    
-    return config;
+    // Create config from ViteEnv values
+    return {
+      LOG_LEVEL: this.isValidLogLevel(ViteEnv.LOG_LEVEL) ? ViteEnv.LOG_LEVEL : 'info',
+      LOG_TARGETS: logTargets.length > 0 ? logTargets : ['console'],
+      LOG_FORMAT: this.isValidLogFormat(ViteEnv.LOG_FORMAT) ? ViteEnv.LOG_FORMAT : 'json',
+      LOG_FILE_PATH: ViteEnv.LOG_FILE_PATH,
+      LOG_FILE_ROTATION: ViteEnv.LOG_FILE_ROTATION,
+      LOG_MAX_SIZE: ViteEnv.LOG_MAX_SIZE,
+      LOG_INCLUDE_TIMESTAMP: ViteEnv.LOG_INCLUDE_TIMESTAMP,
+      LOG_INCLUDE_HOSTNAME: ViteEnv.LOG_INCLUDE_HOSTNAME,
+      CORRELATION_ID_HEADER: ViteEnv.CORRELATION_ID_HEADER,
+      REDACT_FIELDS: redactFields
+    };
   }
   
   // Type guard for log level
@@ -143,82 +105,83 @@ class LogManager {
     return ['json', 'pretty'].includes(format);
   }
   
-  // app/core/Observability/logs.ts (partial update for createLogger method)
-
-private createLogger(): LoggerInstance {
-    // Configure transports based on targets
-    const transports: TransportTargetOption[] = [];
-    
+  private createLogger(): LoggerInstance {
     // Setup redaction patterns
     const redactOptions: RedactOptions = {
       paths: this.config.REDACT_FIELDS,
       censor: '[REDACTED]'
     };
     
-    // Base logger options without formatters when using transports
-    const loggerOptions: pino.LoggerOptions = {
+    // Base logger options
+    const baseOptions: pino.LoggerOptions = {
       level: this.config.LOG_LEVEL,
       redact: redactOptions
     };
     
-    // Add timestamp handling
+    // Add timestamp if configured
     if (this.config.LOG_INCLUDE_TIMESTAMP) {
-      loggerOptions.timestamp = () => `,"time":"${DateTime.now().setZone(ViteEnv.TIMEZONE).toISO()}"`;
+      baseOptions.timestamp = () => `,"time":"${DateTime.now().setZone(ViteEnv.TIMEZONE).toISO()}"`;
     }
     
-    // Configure transports
-    if (this.config.LOG_TARGETS.includes('console')) {
-      if (this.config.LOG_FORMAT === 'pretty') {
-        transports.push({
-          target: 'pino-pretty',
+    // If using transports, we need to avoid using formatters
+    if (this.config.LOG_TARGETS.length > 0 && 
+       (this.config.LOG_TARGETS.includes('file') || 
+        this.config.LOG_TARGETS.includes('opentelemetry') || 
+        (this.config.LOG_TARGETS.includes('console') && this.config.LOG_FORMAT === 'pretty'))) {
+      
+      const targets: TransportTargetOption[] = [];
+      
+      // Configure transports based on targets
+      if (this.config.LOG_TARGETS.includes('console')) {
+        if (this.config.LOG_FORMAT === 'pretty') {
+          targets.push({
+            target: 'pino-pretty',
+            options: {
+              colorize: true,
+              translateTime: true,
+              ignore: 'pid,hostname'
+            }
+          });
+        } else {
+          targets.push({
+            target: 'pino/file',
+            options: { destination: 1 } // stdout
+          });
+        }
+      }
+      
+      if (this.config.LOG_TARGETS.includes('file')) {
+        targets.push({
+          target: 'pino/file',
           options: {
-            colorize: true,
-            translateTime: true,
-            ignore: 'pid,hostname'
+            destination: `${this.config.LOG_FILE_PATH}/app.log`,
+            mkdir: true
           }
         });
-      } else {
-        // Use standard console output for JSON format
-        transports.push({
-          target: 'pino/file',
-          options: { destination: 1 } // stdout
+      }
+      
+      if (this.config.LOG_TARGETS.includes('opentelemetry')) {
+        targets.push({
+          target: 'pino-opentelemetry-transport',
+          options: {
+            serviceName: ViteEnv.OTEL_SERVICE_NAME,
+            serviceVersion: ViteEnv.OTEL_SERVICE_VERSION
+          }
         });
       }
-    }
-    
-    if (this.config.LOG_TARGETS.includes('file')) {
-      transports.push({
-        target: 'pino/file',
-        options: {
-          destination: `${this.config.LOG_FILE_PATH}/app.log`,
-          mkdir: true
-        }
-      });
-    }
-    
-    if (this.config.LOG_TARGETS.includes('opentelemetry')) {
-      transports.push({
-        target: 'pino-opentelemetry-transport',
-        options: {
-          serviceName: 'omni-iam',
-          serviceVersion: '1.0.0'
-        }
-      });
-    }
-    
-    // Create and return the logger
-    if (transports.length > 0) {
-      // When using transports, don't use formatters
+      
+      // Create logger with transports but without formatters
       return pino({
-        ...loggerOptions,
+        ...baseOptions,
         transport: {
-          targets: transports
+          targets
         }
       });
     } else {
-      // When not using transports, we can use formatters
+      // No transports, or only console with json format
+      // We can use formatters in this case
       return pino({
-        ...loggerOptions,
+        ...baseOptions,
         formatters: {
           level: (label: string) => {
             return { level: label };
