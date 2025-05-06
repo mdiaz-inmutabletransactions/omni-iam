@@ -21,6 +21,13 @@ export const loader = async () => {
   const operationLogger = createOperationLogger("debug-page-access", crypto.randomUUID());
   operationLogger.info("Debug page for Observability accessed");
   
+  // Add this to debug-observability.tsx loader to verify the configuration
+  logger.info({
+    logTargets: ViteEnv.LOG_TARGETS.split(','),
+    includesFile: ViteEnv.LOG_TARGETS.includes('file'),
+    logFilePath: ViteEnv.LOG_FILE_PATH
+  }, 'Log configuration debug');
+
   // Generate some sample logs at different levels
   logger.trace("This is a trace log for testing");
   logger.debug("This is a debug log for testing");
