@@ -1,8 +1,16 @@
-// app/core/Observability/logs.ts - update to use ViteEnv
+// app/core/Observability/logs.ts
 
 import pino from 'pino';
 import { DateTime } from 'luxon';
-import { ViteEnv } from '../ViteEnv/index';
+
+// Import from the config module instead of ViteEnv
+import { 
+  getEnv, 
+  getBoolEnv, 
+  getNumEnv, 
+  logDefaults,
+  safeLog 
+} from '../config/enviroment';
 
 // Define log levels as a union type
 export type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal';
@@ -66,33 +74,41 @@ class LogManager {
   }
   
   private loadConfiguration(): LogSchema {
+    // Use the environment config module instead of ViteEnv
+    
     // Parse LOG_TARGETS from string to array
-    const logTargets = ViteEnv.LOG_TARGETS.split(',')
+    const logTargetsStr = getEnv('LOG_TARGETS', logDefaults.LOG_TARGETS);
+    const logTargets = logTargetsStr.split(',')
       .map(t => t.trim())
       .filter(this.isValidLogTarget) as LogTarget[];
     
     // Parse REDACT_FIELDS from string to array
-    const redactFields = ViteEnv.REDACT_FIELDS.split(',')
+    const redactFieldsStr = getEnv('REDACT_FIELDS', logDefaults.REDACT_FIELDS);
+    const redactFields = redactFieldsStr.split(',')
       .map(f => f.trim());
     
-    // Create config from ViteEnv values
+    // Create config from environment values with defaults
+    const logLevelStr = getEnv('LOG_LEVEL', logDefaults.LOG_LEVEL);
+    
     return {
-      LOG_LEVEL: this.isValidLogLevel(ViteEnv.LOG_LEVEL) ? ViteEnv.LOG_LEVEL : 'info',
+      LOG_LEVEL: this.isValidLogLevel(logLevelStr) ? logLevelStr : 'info',
       LOG_TARGETS: logTargets.length > 0 ? logTargets : ['console'],
-      LOG_FORMAT: this.isValidLogFormat(ViteEnv.LOG_FORMAT) ? ViteEnv.LOG_FORMAT : 'json',
-      LOG_FILE_PATH: ViteEnv.LOG_FILE_PATH,
-      LOG_FILE_ROTATION: ViteEnv.LOG_FILE_ROTATION,
-      LOG_MAX_SIZE: ViteEnv.LOG_MAX_SIZE,
-      LOG_INCLUDE_TIMESTAMP: ViteEnv.LOG_INCLUDE_TIMESTAMP,
-      LOG_INCLUDE_HOSTNAME: ViteEnv.LOG_INCLUDE_HOSTNAME,
-      CORRELATION_ID_HEADER: ViteEnv.CORRELATION_ID_HEADER,
+      LOG_FORMAT: this.isValidLogFormat(getEnv('LOG_FORMAT', logDefaults.LOG_FORMAT)) 
+        ? getEnv('LOG_FORMAT', logDefaults.LOG_FORMAT) as LogFormat 
+        : 'json',
+      LOG_FILE_PATH: getEnv('LOG_FILE_PATH', logDefaults.LOG_FILE_PATH),
+      LOG_FILE_ROTATION: getBoolEnv('LOG_FILE_ROTATION', true),
+      LOG_MAX_SIZE: getNumEnv('LOG_MAX_SIZE', 10 * 1024 * 1024),
+      LOG_INCLUDE_TIMESTAMP: getBoolEnv('LOG_INCLUDE_TIMESTAMP', true),
+      LOG_INCLUDE_HOSTNAME: getBoolEnv('LOG_INCLUDE_HOSTNAME', true),
+      CORRELATION_ID_HEADER: getEnv('CORRELATION_ID_HEADER', logDefaults.CORRELATION_ID_HEADER) || 'X-Correlation-ID',
       REDACT_FIELDS: redactFields
     };
   }
   
   // Type guard for log level
-  private isValidLogLevel(level: string): level is LogLevel {
-    return ['trace', 'debug', 'info', 'warn', 'error', 'fatal'].includes(level);
+  private isValidLogLevel(level: string | undefined): level is LogLevel {
+    return !!level && ['trace', 'debug', 'info', 'warn', 'error', 'fatal'].includes(level);
   }
   
   // Type guard for log target
@@ -101,11 +117,19 @@ class LogManager {
   }
   
   // Type guard for log format
-  private isValidLogFormat(format: string): format is LogFormat {
-    return ['json', 'pretty'].includes(format);
+  private isValidLogFormat(format: string | undefined): format is LogFormat {
+    return !!format && ['json', 'pretty'].includes(format);
   }
   
   private createLogger(): LoggerInstance {
+    // Log initialization with safeLog since logger isn't ready yet
+    safeLog('info', {
+      msg: 'Initializing logger',
+      level: this.config.LOG_LEVEL,
+      targets: this.config.LOG_TARGETS,
+      format: this.config.LOG_FORMAT
+    });
+    
     // Setup redaction patterns
     const redactOptions: RedactOptions = {
       paths: this.config.REDACT_FIELDS,
@@ -120,7 +144,8 @@ class LogManager {
     
     // Add timestamp if configured
     if (this.config.LOG_INCLUDE_TIMESTAMP) {
-      baseOptions.timestamp = () => `,"time":"${DateTime.now().setZone(ViteEnv.TIMEZONE).toISO()}"`;
+      const timezone = getEnv('TIMEZONE', 'UTC');
+      baseOptions.timestamp = () => `,"time":"${DateTime.now().setZone(timezone).toISO()}"`;
     }
     
     // If using transports, we need to avoid using formatters
@@ -161,11 +186,14 @@ class LogManager {
       }
       
       if (this.config.LOG_TARGETS.includes('opentelemetry')) {
+        const serviceName = getEnv('OTEL_SERVICE_NAME', 'omni-iam');
+        const serviceVersion = getEnv('OTEL_SERVICE_VERSION', '1.0.0');
+        
         targets.push({
           target: 'pino-opentelemetry-transport',
           options: {
-            serviceName: ViteEnv.OTEL_SERVICE_NAME,
-            serviceVersion: ViteEnv.OTEL_SERVICE_VERSION
+            serviceName,
+            serviceVersion
           }
         });
       }

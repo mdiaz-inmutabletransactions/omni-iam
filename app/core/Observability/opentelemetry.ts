@@ -4,12 +4,16 @@ import { NodeSDK } from '@opentelemetry/sdk-node';
 import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-proto';
 import { BatchSpanProcessor } from '@opentelemetry/sdk-trace-base';
-import { ViteEnv } from '../ViteEnv/index';
-import { logger } from './logs';
-// Import the resourceFromAttributes helper function
 import { resourceFromAttributes } from '@opentelemetry/resources';
-// Import semantic conventions
 import { SemanticResourceAttributes } from '@opentelemetry/semantic-conventions';
+
+// Import from shared config instead of directly from ViteEnv
+import { 
+  getEnv, 
+  getBoolEnv, 
+  otelDefaults,
+  safeLog 
+} from '../config/enviroment';
 
 // Configuration for OpenTelemetry with proper types
 export interface TelemetryConfig {
@@ -21,37 +25,46 @@ export interface TelemetryConfig {
   OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT?: number;
 }
 
-// Default configuration
-const defaultConfig: TelemetryConfig = {
-  OTEL_ENABLED: process.env.NODE_ENV === 'production',
-  OTEL_SERVICE_NAME: 'omni-iam',
-  OTEL_SERVICE_VERSION: '1.0.0',
-  OTEL_EXPORTER_OTLP_ENDPOINT: 'http://localhost:4317',
-};
-
 // Initialize OpenTelemetry
 export function initializeOpenTelemetry(): void {
+  // Load config directly instead of from ViteEnv
+  const config = loadTelemetryConfig();
+  
   // Skip if disabled
-  if (!ViteEnv.OTEL_ENABLED) {
-    logger.info('OpenTelemetry is disabled');
+  if (!config.OTEL_ENABLED) {
+    safeLog('info', {
+      msg: 'OpenTelemetry is disabled',
+      component: 'OpenTelemetry'
+    });
     return;
   }
   
   try {
+    // Setup trace exporter with structured logging
+    safeLog('info', {
+      msg: 'Initializing OpenTelemetry',
+      endpoint: config.OTEL_EXPORTER_OTLP_ENDPOINT,
+      serviceName: config.OTEL_SERVICE_NAME,
+      serviceVersion: config.OTEL_SERVICE_VERSION,
+      component: 'OpenTelemetry'
+    });
+    
     // Setup trace exporter
     const traceExporter = new OTLPTraceExporter({
-      url: ViteEnv.OTEL_EXPORTER_OTLP_ENDPOINT + '/v1/traces',
-      headers: ViteEnv.OTEL_EXPORTER_OTLP_HEADERS 
-        ? JSON.parse(ViteEnv.OTEL_EXPORTER_OTLP_HEADERS) 
+      url: config.OTEL_EXPORTER_OTLP_ENDPOINT + '/v1/traces',
+      headers: config.OTEL_EXPORTER_OTLP_HEADERS 
+        ? JSON.parse(config.OTEL_EXPORTER_OTLP_HEADERS) 
         : undefined,
     });
     
+    // Get environment for resource attributes
+    const environment = getEnv('VITE_PUBLIC_ENV', 'development');
+    
     // Create custom resource using resourceFromAttributes
-    // This is the proper way to create a custom resource in OpenTelemetry v2
     const resource = resourceFromAttributes({
-      [SemanticResourceAttributes.SERVICE_NAME]: ViteEnv.OTEL_SERVICE_NAME,
-      [SemanticResourceAttributes.SERVICE_VERSION]: ViteEnv.OTEL_SERVICE_VERSION,
-      [SemanticResourceAttributes.DEPLOYMENT_ENVIRONMENT]: ViteEnv.VITE_PUBLIC_ENV,
+      [SemanticResourceAttributes.SERVICE_NAME]: config.OTEL_SERVICE_NAME,
+      [SemanticResourceAttributes.SERVICE_VERSION]: config.OTEL_SERVICE_VERSION,
+      [SemanticResourceAttributes.DEPLOYMENT_ENVIRONMENT]: environment,
     });
     
     // Create SDK with auto-instrumentation and our custom resource
@@ -67,39 +80,50 @@ export function initializeOpenTelemetry(): void {
     
     // Start OpenTelemetry and register a shutdown handler
     sdk.start();
-    logger.info(`OpenTelemetry initialized for service ${ViteEnv.OTEL_SERVICE_NAME}`);
+    safeLog('info', {
+      msg: 'OpenTelemetry initialized successfully',
+      serviceName: config.OTEL_SERVICE_NAME,
+      component: 'OpenTelemetry'
+    });
     
     // Register shutdown
     process.on('SIGTERM', () => {
       sdk.shutdown()
-        .then(() => logger.info('OpenTelemetry SDK shut down successfully'))
-        .catch((error: Error) => logger.error({ 
+        .then(() => safeLog('info', { 
+          msg: 'OpenTelemetry SDK shut down successfully',
+          component: 'OpenTelemetry'
+        }))
+        .catch((error: Error) => safeLog('error', { 
+          msg: 'Error shutting down OpenTelemetry SDK',
           error: { 
             message: error.message, 
             stack: error.stack 
-          } 
-        }, 'Error shutting down OpenTelemetry SDK'))
+          },
+          component: 'OpenTelemetry'
+        }))
         .finally(() => process.exit(0));
     });
   } catch (error) {
-    logger.error({ 
+    safeLog('error', { 
+      msg: 'Failed to initialize OpenTelemetry',
       error: error instanceof Error 
         ? { message: error.message, stack: error.stack } 
-        : { message: String(error) }
-    }, 'Failed to initialize OpenTelemetry');
+        : { message: String(error) },
+      component: 'OpenTelemetry'
+    });
   }
 }
 
 // Load telemetry configuration from environment variables
 function loadTelemetryConfig(): TelemetryConfig {
   return {
-    OTEL_ENABLED: process.env.OTEL_ENABLED === 'true' || defaultConfig.OTEL_ENABLED,
-    OTEL_SERVICE_NAME: process.env.OTEL_SERVICE_NAME || defaultConfig.OTEL_SERVICE_NAME,
-    OTEL_SERVICE_VERSION: process.env.OTEL_SERVICE_VERSION || defaultConfig.OTEL_SERVICE_VERSION,
-    OTEL_EXPORTER_OTLP_ENDPOINT: process.env.OTEL_EXPORTER_OTLP_ENDPOINT || defaultConfig.OTEL_EXPORTER_OTLP_ENDPOINT,
-    OTEL_EXPORTER_OTLP_HEADERS: process.env.OTEL_EXPORTER_OTLP_HEADERS,
-    OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT: process.env.OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT 
-      ? parseInt(process.env.OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT, 10) 
+    OTEL_ENABLED: getBoolEnv('OTEL_ENABLED', otelDefaults.OTEL_ENABLED === 'true'),
+    OTEL_SERVICE_NAME: getEnv('OTEL_SERVICE_NAME', otelDefaults.OTEL_SERVICE_NAME),
+    OTEL_SERVICE_VERSION: getEnv('OTEL_SERVICE_VERSION', otelDefaults.OTEL_SERVICE_VERSION),
+    OTEL_EXPORTER_OTLP_ENDPOINT: getEnv('OTEL_EXPORTER_OTLP_ENDPOINT', otelDefaults.OTEL_EXPORTER_OTLP_ENDPOINT),
+    OTEL_EXPORTER_OTLP_HEADERS: getEnv('OTEL_EXPORTER_OTLP_HEADERS'),
+    OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT: getEnv('OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT') 
+      ? parseInt(getEnv('OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT')!, 10) 
       : undefined,
   };
 }
