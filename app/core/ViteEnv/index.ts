@@ -298,7 +298,7 @@ class ViteEnvManager {
 
       // Debug log to help troubleshoot with structured format
       safeLog('debug', {
-        msg: "Loading environment variable",
+        message: "Loading environment variable",
         key,
         status: rawValue !== undefined ? 'defined' : 'undefined'
       });
@@ -333,20 +333,20 @@ class ViteEnvManager {
 
           if (!validation.valid) {
             safeLog('warn', {
-              msg: "Invalid environment variable",
+              message: "Invalid environment variable",
               key,
-              message: validation.message
+              validation_message: validation.message
             });
           }
         } catch (error) {
           safeLog('warn', {
-            msg: "Failed to parse environment variable",
+            message: "Failed to parse environment variable",
             key,
             error: error instanceof Error ? error.message : String(error)
           });
           
           safeLog('warn', {
-            msg: "Falling back to default value",
+            message: "Falling back to default value",
             key,
             defaultValue: key.includes('SECRET') ? '[REDACTED]' : defaults[key]
           });
@@ -359,7 +359,7 @@ class ViteEnvManager {
         }
       } else {
         safeLog('debug', {
-          msg: "Using default value for environment variable",
+          message: "Using default value for environment variable",
           key,
           defaultValue: key.includes('SECRET') ? '[REDACTED]' : defaults[key]
         });
@@ -374,7 +374,7 @@ class ViteEnvManager {
 
     // Log summary with structured format
     safeLog('info', {
-      msg: "Environment variables loaded",
+      message: "Environment variables loaded",
       totalVars: envMap.size,
       fromEnv: Array.from(envMap.values()).filter(v => v.source === 'env').length,
       fromDefault: Array.from(envMap.values()).filter(v => v.source === 'default').length,
@@ -420,10 +420,10 @@ class ViteEnvManager {
 
     if (!validation.valid) {
       safeLog('warn', {
-        msg: "Validation failed when setting environment variable",
+        message: "Validation failed when setting environment variable",
         key,
         value: key.includes('SECRET') ? '[REDACTED]' : value,
-        message: validation.message
+        validation_message: validation.message
       });
       
       return { success: false, message: validation.message };
@@ -437,7 +437,7 @@ class ViteEnvManager {
     
     // Log the change with structured format
     safeLog('info', {
-      msg: "Environment variable updated manually",
+      message: "Environment variable updated manually",
       key,
       previousSource: ViteEnvManager.instance.env.get(key)?.source,
       newSource: 'manual'
@@ -478,13 +478,13 @@ class ViteEnvManager {
     // Log validation results with structured format
     if (!valid) {
       safeLog('warn', {
-        msg: "Environment validation failed",
+        message: "Environment validation failed",
         errorCount: Object.keys(errors).length,
         errors
       });
     } else {
       safeLog('info', {
-        msg: "Environment validation succeeded",
+        message: "Environment validation succeeded",
         validVars: ViteEnvManager.instance.env.size
       });
     }
@@ -520,7 +520,7 @@ class ViteEnvManager {
     
     // Log debug summary with structured format
     safeLog('info', {
-      msg: "Environment variables debug information",
+      message: "Environment variables debug information",
       summary
     });
     
@@ -531,7 +531,7 @@ class ViteEnvManager {
       
     if (invalidVars.length > 0) {
       safeLog('warn', {
-        msg: "Invalid environment variables detected",
+        message: "Invalid environment variables detected",
         count: invalidVars.length,
         variables: invalidVars
       });
@@ -549,7 +549,7 @@ class ViteEnvManager {
         
       if (defaultVarsInProduction.length > 0) {
         safeLog('warn', {
-          msg: "Production environment using default values",
+          message: "Production environment using default values",
           count: defaultVarsInProduction.length,
           variables: defaultVarsInProduction
         });

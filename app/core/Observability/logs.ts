@@ -3,13 +3,12 @@
 import pino from 'pino';
 import { DateTime } from 'luxon';
 
-// Import from the config module instead of ViteEnv
+// Import from the config module
 import { 
   getEnv, 
-  getBoolEnv, 
+  getBoolEnv,
   getNumEnv, 
-  logDefaults,
-  safeLog 
+  logDefaults
 } from '../config/enviroment';
 
 // Define log levels as a union type
@@ -78,21 +77,33 @@ class LogManager {
     
     // Parse LOG_TARGETS from string to array
     const logTargetsStr = getEnv('LOG_TARGETS', logDefaults.LOG_TARGETS);
-    const logTargets = logTargetsStr.split(',')
-      .map(t => t.trim())
-      .filter(this.isValidLogTarget) as LogTarget[];
+    
+    // Safely parse and filter log targets
+    let logTargets: LogTarget[] = ['console']; // Default to console if parsing fails
+    
+    if (logTargetsStr) {
+      // Parse and filter to valid targets only
+      const parsedTargets = logTargetsStr.split(',')
+        .map((t: string) => t.trim())
+        .filter((t: string) => this.isValidLogTarget(t)) as LogTarget[];
+      
+      if (parsedTargets.length > 0) {
+        logTargets = parsedTargets;
+      }
+    }
     
     // Parse REDACT_FIELDS from string to array
     const redactFieldsStr = getEnv('REDACT_FIELDS', logDefaults.REDACT_FIELDS);
-    const redactFields = redactFieldsStr.split(',')
-      .map(f => f.trim());
+    const redactFields = redactFieldsStr
+      ? redactFieldsStr.split(',').map((f: string) => f.trim())
+      : ['password', 'secret', 'token', 'authorization', 'cookie'];
     
     // Create config from environment values with defaults
     const logLevelStr = getEnv('LOG_LEVEL', logDefaults.LOG_LEVEL);
     
     return {
       LOG_LEVEL: this.isValidLogLevel(logLevelStr) ? logLevelStr : 'info',
-      LOG_TARGETS: logTargets.length > 0 ? logTargets : ['console'],
+      LOG_TARGETS: logTargets,
       LOG_FORMAT: this.isValidLogFormat(getEnv('LOG_FORMAT', logDefaults.LOG_FORMAT)) 
         ? getEnv('LOG_FORMAT', logDefaults.LOG_FORMAT) as LogFormat 
         : 'json',
@@ -122,31 +133,25 @@ class LogManager {
   }
   
   private createLogger(): LoggerInstance {
-    // Log initialization with safeLog since logger isn't ready yet
-    safeLog('info', {
-      msg: 'Initializing logger',
-      level: this.config.LOG_LEVEL,
-      targets: this.config.LOG_TARGETS,
-      format: this.config.LOG_FORMAT
-    });
-    
     // Setup redaction patterns
     const redactOptions: RedactOptions = {
       paths: this.config.REDACT_FIELDS,
       censor: '[REDACTED]'
     };
     
+    // Custom timestamp function to ensure ISO format with timezone
+    function timestampFunction() {
+      const timezone = getEnv('TIMEZONE', 'UTC');
+      const now = DateTime.now().setZone(timezone);
+      return `,"time":"${now.toISO()}"`;
+    }
+    
     // Base logger options
     const baseOptions: pino.LoggerOptions = {
       level: this.config.LOG_LEVEL,
-      redact: redactOptions
+      redact: redactOptions,
+      timestamp: timestampFunction,
     };
-    
-    // Add timestamp if configured
-    if (this.config.LOG_INCLUDE_TIMESTAMP) {
-      const timezone = getEnv('TIMEZONE', 'UTC');
-      baseOptions.timestamp = () => `,"time":"${DateTime.now().setZone(timezone).toISO()}"`;
-    }
     
     // If using transports, we need to avoid using formatters
     if (this.config.LOG_TARGETS.length > 0 && 
@@ -198,7 +203,8 @@ class LogManager {
         });
       }
       
-      // Create logger with transports but without formatters
+      // Create logger with transport - fixed type issue
+      // Use the transport property in the options object, not as a second parameter
       return pino({
         ...baseOptions,
         transport: {
@@ -235,6 +241,7 @@ class LogManager {
     return this.logger;
   }
   
+  // Create a child logger without custom serializers
   public createChildLogger(context: LogContext): LoggerInstance {
     return this.logger.child(context);
   }
@@ -267,3 +274,20 @@ export const createContextLogger = LogManager.createContextLogger;
 
 // Export the manager itself for advanced usage
 export const logManager = LogManager.getInstance();
+
+// Define extensions to make logging more consistent
+export const logInfo = (data: Record<string, any>): void => {
+  logger.info(data);
+};
+
+export const logDebug = (data: Record<string, any>): void => {
+  logger.debug(data);
+};
+
+export const logWarn = (data: Record<string, any>): void => {
+  logger.warn(data);
+};
+
+export const logError = (data: Record<string, any>): void => {
+  logger.error(data);
+};

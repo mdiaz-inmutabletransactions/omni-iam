@@ -1,8 +1,42 @@
 // app/core/config/environment.ts
 // This module loads raw environment variables with basic defaults
 // Both ViteEnv and LogManager can import from this
-import fs from 'fs';
+import { promises as fsPromises } from 'fs';
+import * as fs from 'fs';
 import path from 'path';
+import { DateTime } from 'luxon';
+import * as os from 'os'; // Import os module for hostname
+import { log } from 'console';
+
+// Helper to get the system hostname
+function getSystemHostname(): string {
+  try {
+    // In Node.js environment, use the os module to get the hostname
+    if (typeof process !== 'undefined' && process.versions && process.versions.node) {
+      return os.hostname();
+    }
+    
+    // In browser environment, use the window.location
+    if (typeof window !== 'undefined' && window.location) {
+      return window.location.hostname;
+    }
+    
+    // Fallback to environment variable
+    const envHostname = process.env.HOSTNAME || process.env.COMPUTERNAME;
+    if (envHostname) {
+      return envHostname;
+    }
+    
+    // Final fallback
+    return process.env.NODE_ENV === 'production' ? 'server' : 'localhost';
+  } catch (error) {
+    // If anything fails, return a default value
+    return process.env.NODE_ENV === 'production' ? 'server' : 'localhost';
+  }
+}
+
+// Cache the hostname so we don't recalculate it for every log
+const systemHostname = getSystemHostname();
 
 // Load environment variables directly from process.env or import.meta.env
 function loadRawEnv() {
@@ -39,6 +73,7 @@ export const logDefaults = {
   LOG_INCLUDE_HOSTNAME: 'true',
   CORRELATION_ID_HEADER: 'X-Correlation-ID',
   REDACT_FIELDS: 'password,secret,token,authorization,cookie',
+  TIMEZONE: 'America/Mexico_City',
 };
 
 // Basic defaults for OpenTelemetry (simple string values only)
@@ -72,126 +107,168 @@ export function getNumEnv(key: string, defaultValue = 0): number {
 // Get log targets from environment or defaults
 function getLogTargets(): string[] {
   const targets = getEnv('LOG_TARGETS', logDefaults.LOG_TARGETS);
-  return targets.split(',').map(t => t.trim());
+  return targets ? targets.split(',').map(t => t.trim()) : ['console'];
 }
 
-// Helper function to ensure log directory exists
-function ensureLogDirectory(): string {
-  const logDir = getEnv('LOG_FILE_PATH', logDefaults.LOG_FILE_PATH) || './logs';
-  
-  // Only try to create directory if we're in a Node.js environment
-  if (typeof process !== 'undefined' && fs && fs.existsSync) {
-    if (!fs.existsSync(logDir)) {
-      try {
-        fs.mkdirSync(logDir, { recursive: true });
-      } catch (error) {
-        console.error(`Failed to create log directory: ${logDir}`, error);
-      }
-    }
-  }
-  
-  return logDir;
+// Helper to convert string log level to pino level
+function getLogLevel(): string {
+  return getEnv('LOG_LEVEL', logDefaults.LOG_LEVEL) || 'info';
 }
 
-// Safely handle OpenTelemetry functionality
-let otelLogger: any = null;
-function initOtelLogger() {
-  // Only initialize if otel is in the targets and we have the deps
-  if (getLogTargets().includes('opentelemetry') && getBoolEnv('OTEL_ENABLED', false)) {
-    try {
-      // Try to dynamically import the OpenTelemetry logger
-      // This is a basic placeholder - the actual OpenTelemetry integration
-      // would be more complex and may require async initialization
-      otelLogger = {
-        log: (level: string, message: any) => {
-          // Placeholder for actual OTel logging
-          console.log(`[OTel] ${level.toUpperCase()}: `, message);
-        }
-      };
-    } catch (error) {
-      console.error('Failed to initialize OpenTelemetry logger', error);
-    }
+// Get the log file path
+function getLogFilePath(): string {
+  return getEnv('LOG_FILE_PATH', logDefaults.LOG_FILE_PATH) || './logs';
+}
+
+// Get the timezone
+function getTimezone(): string {
+  return getEnv('TIMEZONE', logDefaults.TIMEZONE) || 'UTC';
+}
+
+// Custom timestamp function that matches the exact format needed
+function timestampGenerator() {
+  // Format: "time":"2025-05-05T23:34:45.347-06:00"
+  const now = DateTime.now().setZone(getTimezone());
+  return `,"time":"${now.toISO()}"`;
+}
+
+// Helper to convert log level to Pino numeric level
+function levelToNumber(level: string): number {
+  switch (level.toLowerCase()) {
+    case 'trace': return 10;
+    case 'debug': return 20;
+    case 'info': return 30;
+    case 'warn': return 40;
+    case 'error': return 50;
+    case 'fatal': return 60;
+    default: return 30; // default to info
   }
 }
 
-// Improved safeLog that respects LOG_TARGETS
-export function safeLog(level: string, msg: string | object, ...args: any[]): void {
-  const logTargets = getLogTargets();
-  const logObj = typeof msg === 'string' ? { msg } : msg;
-  
-  // Add timestamp if configured
-  if (getBoolEnv('LOG_INCLUDE_TIMESTAMP', true)) {
-    logObj.timestamp = new Date().toISOString();
+// Create log directories if needed
+async function ensureLogDirectory(dirPath: string): Promise<void> {
+  try {
+    await fsPromises.mkdir(dirPath, { recursive: true });
+  } catch (error) {
+    console.error('Failed to create log directory:', error);
   }
-  
-  // Add level to object
-  logObj.level = level;
-  
-  // Console logging
-  if (logTargets.includes('console')) {
-    switch (level) {
-      case 'debug':
-        console.debug(logObj, ...args);
-        break;
-      case 'info':
-        console.info(logObj, ...args);
-        break;
-      case 'warn':
-        console.warn(logObj, ...args);
-        break;
-      case 'error':
-        console.error(logObj, ...args);
-        break;
-      default:
-        console.log(logObj, ...args);
+}
+
+// Ensure log directory exists (synchronous version for initialization)
+function ensureLogDirectorySync(dirPath: string): void {
+  try {
+    if (typeof fs.existsSync === 'function' && !fs.existsSync(dirPath)) {
+      fs.mkdirSync(dirPath, { recursive: true });
     }
+  } catch (error) {
+    console.error('Failed to create log directory:', error);
+  }
+}
+
+// Custom log formatter with string parsing to object
+function formatLogEntry(level: string, data: any): string {
+  const time = DateTime.now().setZone(getTimezone()).toISO();
+  
+  // Create an object that matches Pino's format exactly
+  const logObject: Record<string, any> = {
+    level: levelToNumber(level),
+    time,
+    pid: process.pid,
+    hostname: systemHostname // Use the cached hostname
+  };
+  
+  // Add all properties from data directly to the log object
+  if (typeof data === 'object' && data !== null) {
+    Object.assign(logObject, data);
+  } else if (typeof data === 'string') {
+    // Use direct message field instead of msg
+    logObject.message = data;
   }
   
-  // File logging
-  if (logTargets.includes('file')) {
-    try {
-      const logDir = ensureLogDirectory();
-      const logFormat = getEnv('LOG_FORMAT', logDefaults.LOG_FORMAT);
-      
-      // Only attempt file logging in Node environment
-      if (typeof process !== 'undefined' && fs && fs.appendFileSync) {
-        const logFilePath = path.join(logDir, `app.log`);
-        const logEntry = logFormat === 'json' 
-          ? JSON.stringify(logObj) + '\n'
-          : `[${new Date().toISOString()}] ${level.toUpperCase()}: ${
-              typeof msg === 'string' ? msg : JSON.stringify(msg)
-            }\n`;
-        
-        fs.appendFileSync(logFilePath, logEntry);
-      }
-    } catch (error) {
-      // Fall back to console if file logging fails
-      console.error('Failed to write to log file:', error);
-    }
+  return JSON.stringify(logObject) + '\n';
+}
+
+// Configure and create lightweight Pino loggers
+const targets = getLogTargets();
+const logLevel = getLogLevel();
+const logFormat = getEnv('LOG_FORMAT', logDefaults.LOG_FORMAT);
+
+// Initialize loggers based on targets
+let consoleLogger: any = null;
+let logDir: string | null = null;
+let logFile: string | null = null;
+
+// Setup console logger if needed
+if (targets.includes('console')) {
+  try {
+    // For browsers or environments without pino
+    consoleLogger = {
+      trace: (data: any) => console.trace(data),
+      debug: (data: any) => console.debug(data),
+      info: (data: any) => console.info(data),
+      warn: (data: any) => console.warn(data),
+      error: (data: any) => console.error(data),
+      fatal: (data: any) => console.error(data)
+    };
+  } catch (error) {
+    console.error('Failed to initialize console logger:', error);
   }
-  
-  // OpenTelemetry logging
-  if (logTargets.includes('opentelemetry')) {
-    if (!otelLogger) {
-      initOtelLogger();
+}
+
+// Setup file path if needed
+if (targets.includes('file') && typeof process !== 'undefined') {
+  try {
+    logDir = getLogFilePath();
+    
+    // Create directory if needed (sync during initialization)
+    if (typeof fs.existsSync === 'function') {
+      ensureLogDirectorySync(logDir);
     }
     
-    if (otelLogger) {
-      // This is a placeholder for actual OTel integration
-      otelLogger.log(level, logObj);
-    }
+    logFile = path.join(logDir, 'app.log');
+  } catch (error) {
+    console.error('Failed to setup log file path:', error);
   }
 }
 
-// Initialize any required dependencies
-(function init() {
-  // Ensure log directory exists if file logging is enabled
-  if (getLogTargets().includes('file')) {
-    ensureLogDirectory();
+// Improved safeLog that works with ES modules
+export function safeLog(level: string, data: any, ...args: any[]): void {
+  // For console logging
+  if (targets.includes('console') && consoleLogger) {
+    switch (level) {
+      case 'trace': consoleLogger.trace(data, ...args); break;
+      case 'debug': consoleLogger.debug(data, ...args); break;
+      case 'info': consoleLogger.info(data, ...args); break;
+      case 'warn': consoleLogger.warn(data, ...args); break;
+      case 'error': consoleLogger.error(data, ...args); break;
+      case 'fatal': consoleLogger.fatal(data, ...args); break;
+      default: consoleLogger.info(data, ...args);
+    }
+  } else if (targets.includes('console')) {
+    // Fallback to regular console if logger not available
+    console.log(data, ...args);
   }
   
-  // Initialize OpenTelemetry logger if needed
-  if (getLogTargets().includes('opentelemetry')) {
-    initOtelLogger();
+  // For file logging, write directly in the correct format
+  if (targets.includes('file') && logFile && logDir) {
+    try {
+      const logEntry = formatLogEntry(level, data);
+      
+      // Use fs.appendFileSync since we're in ESM environment
+      fs.appendFileSync(logFile, logEntry);
+    } catch (error) {
+      console.error('Failed to write to log file:', error);
+      console.error(error);
+    }
   }
-})();
+  
+  // For OpenTelemetry, just a placeholder for now
+  if (targets.includes('opentelemetry') && getBoolEnv('OTEL_ENABLED', false)) {
+    // Placeholder for OpenTelemetry integration
+  }
+}
+
+// Initialize log directories during module load
+if (logDir && typeof fs.existsSync === 'function') {
+  ensureLogDirectorySync(logDir);
+}
