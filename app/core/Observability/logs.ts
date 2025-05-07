@@ -14,9 +14,6 @@ import {
   safeLog
 } from '../config/enviroment';
 
-// Initialize variables for Node modules
-let pino: any = null;
-
 // Define log levels as a union type
 export type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal';
 
@@ -57,7 +54,7 @@ export interface LoggerInstance {
   fatal: (data: any) => void;
   child: (context: LogContext) => LoggerInstance;
   flush?: () => void; // Optional because it may not exist on console logger
-  [key: string]: any; // Allow any other properties that might exist on the logger
+  [key: string]: any; // Allow any other properties
 }
 
 // Type for logging context
@@ -68,13 +65,14 @@ export interface LogContext {
 // Simple console logger for browser environments or before Pino is loaded
 function createConsoleLogger(): LoggerInstance {
   return {
-    trace: (data: any) => console.trace(data),
-    debug: (data: any) => console.debug(data),
-    info: (data: any) => console.info(data),
-    warn: (data: any) => console.warn(data),
-    error: (data: any) => console.error(data),
-    fatal: (data: any) => console.error(data),
-    child: (context: LogContext) => createConsoleLogger()
+    trace: (data: any) => { console.trace(data); return true; },
+    debug: (data: any) => { console.debug(data); return true; },
+    info: (data: any) => { console.info(data); return true; },
+    warn: (data: any) => { console.warn(data); return true; },
+    error: (data: any) => { console.error(data); return true; },
+    fatal: (data: any) => { console.error(data); return true; },
+    child: (context: LogContext) => createConsoleLogger(),
+    flush: () => {}
   };
 }
 
@@ -85,148 +83,174 @@ const logTargets = logTargetsStr ? logTargetsStr.split(',').map(t => t.trim()) :
 const logFilePath = getEnv('LOG_FILE_PATH', logDefaults.LOG_FILE_PATH) || './logs';
 const logFormat = getEnv('LOG_FORMAT', logDefaults.LOG_FORMAT) || 'json';
 
-// Try to dynamically load Pino in Node environment
-if (isNodeEnvironment) {
-  try {
-    // Dynamic import of pino - this will execute immediately but won't block
-    import('pino').then(pinoModule => {
-      pino = pinoModule.default || pinoModule;
-      
-      // Now that pino is loaded, we can attempt to set up file logging if needed
-      if (logTargets.includes('file') && pino) {
-        // We need to dynamically import the node.js built-in modules for file system
-        // Note: In Vite or modern bundlers, you need to use prefixes for Node built-ins
-        import('node:fs').then(fs => {
-          import('node:path').then(path => {
-            // Create file logger and set up file logging as soon as modules are available
-            setupFileLogging(pino, fs, path);
-          }).catch(err => console.error('Failed to import path module:', err));
-        }).catch(err => console.error('Failed to import fs module:', err));
-      }
-    }).catch(err => console.error('Failed to import pino module:', err));
-  } catch (err) {
-    console.error('Error initializing Pino logger:', err);
-  }
-}
+console.log(`Initializing logger with targets: ${logTargets.join(', ')}, format: ${logFormat}, path: ${logFilePath}`);
 
-// Initialize dual logging once modules are available
-function setupFileLogging(pinoModule: any, fs: any, path: any) {
-  try {
-    // Check if directory exists
-    if (!fs.existsSync(logFilePath)) {
-      fs.mkdirSync(logFilePath, { recursive: true });
-      console.log(`Created log directory: ${logFilePath}`);
-    }
-    
-    // Configure dual logging if both targets are requested
-    if (logTargets.includes('console') && logTargets.includes('file')) {
-      const logFile = path.join(logFilePath, 'app.log');
-      console.log(`Setting up dual logging to console and file: ${logFile}`);
-      
-      // Create file destination
-      const fileDestination = pinoModule.destination({
-        dest: logFile,
-        sync: true, // Use synchronous mode
-        mkdir: true
-      });
-      
-      // Create loggers
-      const fileLogger = pinoModule({ level: logLevel }, fileDestination);
-      const consoleLogger = pinoModule({ level: logLevel });
-      
-      // Update the logger methods
-      logger.trace = (data: any) => { consoleLogger.trace(data); fileLogger.trace(data); };
-      logger.debug = (data: any) => { consoleLogger.debug(data); fileLogger.debug(data); };
-      logger.info = (data: any) => { consoleLogger.info(data); fileLogger.info(data); };
-      logger.warn = (data: any) => { consoleLogger.warn(data); fileLogger.warn(data); };
-      logger.error = (data: any) => { consoleLogger.error(data); fileLogger.error(data); };
-      logger.fatal = (data: any) => { consoleLogger.fatal(data); fileLogger.fatal(data); };
-      
-      // Custom child method for dual logging
-      logger.child = (context: LogContext) => {
-        const consoleChild = consoleLogger.child(context);
-        const fileChild = fileLogger.child(context);
-        
-        return {
-          trace: (data: any) => { consoleChild.trace(data); fileChild.trace(data); },
-          debug: (data: any) => { consoleChild.debug(data); fileChild.debug(data); },
-          info: (data: any) => { consoleChild.info(data); fileChild.info(data); },
-          warn: (data: any) => { consoleChild.warn(data); fileChild.warn(data); },
-          error: (data: any) => { consoleChild.error(data); fileChild.error(data); },
-          fatal: (data: any) => { consoleChild.fatal(data); fileChild.fatal(data); },
-          child: (childContext: LogContext) => {
-            // Combine contexts for nested loggers
-            const combinedContext = { ...context, ...childContext };
-            return logger.child(combinedContext);
-          }
-        };
-      };
-      
-      // Flush method for file operations
-      logger.flush = () => {
-        if (fileLogger.flush) fileLogger.flush();
-      };
-      
-      // Set up exit handler to flush logs
-      process.on('beforeExit', () => {
-        if (fileLogger.flush) fileLogger.flush();
-      });
-      
-      console.log('Dual logging successfully configured');
-    } else if (logTargets.includes('file')) {
-      // File-only logging
-      const logFile = path.join(logFilePath, 'app.log');
-      console.log(`Setting up file-only logging to: ${logFile}`);
-      
-      // Create file destination
-      const destination = pinoModule.destination({
-        dest: logFile,
-        sync: true,
-        mkdir: true
-      });
-      
-      // Create file logger
-      const fileLogger = pinoModule({ level: logLevel }, destination);
-      
-      // Replace logger methods
-      logger.trace = fileLogger.trace.bind(fileLogger);
-      logger.debug = fileLogger.debug.bind(fileLogger);
-      logger.info = fileLogger.info.bind(fileLogger);
-      logger.warn = fileLogger.warn.bind(fileLogger);
-      logger.error = fileLogger.error.bind(fileLogger);
-      logger.fatal = fileLogger.fatal.bind(fileLogger);
-      logger.child = fileLogger.child.bind(fileLogger);
-      logger.flush = fileLogger.flush?.bind(fileLogger);
-      
-      // Set up exit handler
-      process.on('beforeExit', () => {
-        if (fileLogger.flush) fileLogger.flush();
-      });
-      
-      console.log('File-only logging successfully configured');
-    }
-  } catch (error) {
-    console.error('Failed to set up file logging:', error);
-  }
-}
-
-// Create initial console logger
+// Create a global logger instance that we'll export
+// Start with a console logger that will be available immediately
 const logger: LoggerInstance = createConsoleLogger();
 
-// If we have Pino and console is the only target, set it up immediately
-if (pino && !logTargets.includes('file') && logTargets.includes('console')) {
-  const consoleLogger = pino({ level: logLevel });
-  
-  // Replace logger methods
-  logger.trace = consoleLogger.trace.bind(consoleLogger);
-  logger.debug = consoleLogger.debug.bind(consoleLogger);
-  logger.info = consoleLogger.info.bind(consoleLogger);
-  logger.warn = consoleLogger.warn.bind(consoleLogger);
-  logger.error = consoleLogger.error.bind(consoleLogger);
-  logger.fatal = consoleLogger.fatal.bind(consoleLogger);
-  logger.child = consoleLogger.child.bind(consoleLogger);
-  
-  console.log('Console-only logging successfully configured');
+// We need to set up file logging if necessary
+if (isNodeEnvironment && logTargets.includes('file')) {
+  // When in Node.js and file logging is requested, set it up immediately
+  try {
+    // Dynamically import required modules
+    import('pino').then(pinoModule => {
+      const pino = pinoModule.default || pinoModule;
+      
+      // Import fs and path modules
+      Promise.all([
+        import('node:fs'),
+        import('node:path')
+      ]).then(([fs, path]) => {
+        try {
+          // Ensure log directory exists
+          if (!fs.existsSync(logFilePath)) {
+            fs.mkdirSync(logFilePath, { recursive: true });
+            console.log(`Created log directory: ${logFilePath}`);
+          }
+          
+          // Create file path
+          const logFile = path.join(logFilePath, 'app.log');
+          console.log(`Setting up file logging to: ${logFile}`);
+          
+          // Create destination - use sync mode to ensure immediate writing
+          const destination = pino.destination({
+            dest: logFile,
+            sync: true, // Use synchronous mode for immediate disk writes
+            mkdir: true
+          });
+          
+          // Create file logger
+          const fileLogger = pino({
+            level: logLevel,
+            timestamp: true // Ensure timestamps are included
+          }, destination);
+          
+          // Set up dual logging if console is also requested
+          if (logTargets.includes('console')) {
+            // Create a separate console logger
+            const consoleLogger = pino({
+              level: logLevel,
+              timestamp: true
+            });
+            
+            // Update the global logger methods to log to both destinations
+            const originalTrace = logger.trace;
+            const originalDebug = logger.debug;
+            const originalInfo = logger.info;
+            const originalWarn = logger.warn;
+            const originalError = logger.error;
+            const originalFatal = logger.fatal;
+            
+            // Override methods to log to both
+            logger.trace = (data: any) => { 
+              consoleLogger.trace(data); 
+              fileLogger.trace(data); 
+              // Call original to maintain console logging during transition
+              originalTrace(data);
+              return true;
+            };
+            
+            logger.debug = (data: any) => { 
+              consoleLogger.debug(data); 
+              fileLogger.debug(data); 
+              originalDebug(data);
+              return true;
+            };
+            
+            logger.info = (data: any) => { 
+              consoleLogger.info(data); 
+              fileLogger.info(data); 
+              originalInfo(data);
+              return true;
+            };
+            
+            logger.warn = (data: any) => { 
+              consoleLogger.warn(data); 
+              fileLogger.warn(data); 
+              originalWarn(data);
+              return true;
+            };
+            
+            logger.error = (data: any) => { 
+              consoleLogger.error(data); 
+              fileLogger.error(data); 
+              originalError(data);
+              return true;
+            };
+            
+            logger.fatal = (data: any) => { 
+              consoleLogger.fatal(data); 
+              fileLogger.fatal(data); 
+              originalFatal(data);
+              return true;
+            };
+            
+            // Custom child logger factory
+            logger.child = (context: LogContext) => {
+              const consoleChild = consoleLogger.child(context);
+              const fileChild = fileLogger.child(context);
+              
+              return {
+                trace: (data: any) => { consoleChild.trace(data); fileChild.trace(data); return true; },
+                debug: (data: any) => { consoleChild.debug(data); fileChild.debug(data); return true; },
+                info: (data: any) => { consoleChild.info(data); fileChild.info(data); return true; },
+                warn: (data: any) => { consoleChild.warn(data); fileChild.warn(data); return true; },
+                error: (data: any) => { consoleChild.error(data); fileChild.error(data); return true; },
+                fatal: (data: any) => { consoleChild.fatal(data); fileChild.fatal(data); return true; },
+                child: (nestedContext: LogContext) => {
+                  const combinedContext = { ...context, ...nestedContext };
+                  return logger.child(combinedContext);
+                },
+                flush: () => {
+                  if (fileChild.flush) fileChild.flush();
+                }
+              };
+            };
+            
+            // Add a flush method to ensure logs are written
+            logger.flush = () => {
+              if (fileLogger.flush) fileLogger.flush();
+            };
+            
+            console.log('Dual logging configured successfully');
+          } else {
+            // File-only logging
+            // Override the global logger methods with the file logger methods
+            logger.trace = (data: any) => { fileLogger.trace(data); return true; };
+            logger.debug = (data: any) => { fileLogger.debug(data); return true; };
+            logger.info = (data: any) => { fileLogger.info(data); return true; };
+            logger.warn = (data: any) => { fileLogger.warn(data); return true; };
+            logger.error = (data: any) => { fileLogger.error(data); return true; };
+            logger.fatal = (data: any) => { fileLogger.fatal(data); return true; };
+            logger.child = (context: LogContext) => fileLogger.child(context);
+            logger.flush = () => {
+              if (fileLogger.flush) fileLogger.flush();
+            };
+            
+            console.log('File-only logging configured successfully');
+          }
+          
+          // Ensure logs are flushed on exit
+          process.on('beforeExit', () => {
+            if (fileLogger.flush) fileLogger.flush();
+          });
+          
+          // Test log to verify file logging is working
+          fileLogger.info('File logging initialized successfully');
+          fileLogger.flush();
+        } catch (error) {
+          console.error('Failed to set up file logging:', error);
+        }
+      }).catch(error => {
+        console.error('Failed to import fs/path modules:', error);
+      });
+    }).catch(error => {
+      console.error('Failed to import pino module:', error);
+    });
+  } catch (error) {
+    console.error('Error during logger initialization:', error);
+  }
 }
 
 // Export the logger
