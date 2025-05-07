@@ -95,29 +95,28 @@ const logger: LoggerInstance = createConsoleLogger();
 if (isNodeEnvironment && logTargets.includes('file')) {
   // When in Node.js and file logging is requested, set it up immediately
   try {
-    // Create file path
-    const logFileAndPath = `${logFilePath}/app.log`
+  
     
 // Call the function to get the transport configuration
-const transportConfig = createPinoConfig(logTargets, logLevel, logFileAndPath);
+const transportConfig = createPinoConfig(logTargets, logLevel, logFilePath);
 
 
 
     // Create destination - use sync mode to ensure immediate writing
-    const destination = pino.destination({
+   /* const destination = pino.destination({
       dest: logFilePath,
       sync: true, // Use synchronous mode for immediate disk writes
       mkdir: true
-    });
+    });*/
 
-    const transport = pino.transport({
+   /* const transport = pino.transport({
 
       targets: [
         {
           target: 'pino/file',
           level: logLevel,
           options: {
-            destination: logFileAndPath,
+            destination: logFilePath,
             mkdir: true,
             sync: true,
           }
@@ -133,11 +132,11 @@ const transportConfig = createPinoConfig(logTargets, logLevel, logFileAndPath);
 
         }
       ]
-    });
+    });*/
 
 
     // Create file logger
-    const Logger = pino(transportConfig, destination);
+    const Logger = pino(transportConfig);
 
       // Update the global logger methods to log to both destinations
       const originalTrace = logger.trace;
@@ -193,9 +192,7 @@ const transportConfig = createPinoConfig(logTargets, logLevel, logFileAndPath);
 
       // Custom child logger factory
       logger.child = (context: LogContext) => {
-       
-
-
+      
         return {
           trace: (data: any) => {logger.trace(data); return true; },
           debug: (data: any) => { logger.debug(data); return true; },
@@ -457,21 +454,25 @@ export function createPinoConfig(
     // Configure console transport
     if (trimmedTarget === 'console') {
       targets.push({
-        target: 'pino/file',
+        target: 'pino-pretty',
         level: logLevel,
-        options: { destination: 1 } // stdout
+        options: {
+          colorize: true,
+          ignore: 'pid,hostname',
+        }
       });
     }
 
     // Configure file transport
     else if (trimmedTarget === 'file') {
+      const file = safeLogFilePath(logFilePath, 'app.log');
       targets.push({
         target: 'pino/file',
         level: logLevel,
         options: {
-          destination: safePath(logFilePath, 'app.log'),
+          destination: file,
           mkdir: true,
-          sync: false
+          sync: true,
         }
       });
     }
@@ -495,36 +496,26 @@ export function createPinoConfig(
 }
 
 /**
- * Safely joins path segments in both Node and browser environments
- * @param {...string} segments Path segments to join
- * @returns {string} Joined path
+ * Safely joins path segments and ensures directory paths end with a separator
+ * @param {string} basePath The base directory path
+ * @param {string} filename The filename to append
+ * @returns {string} Properly joined path with filename
  */
-export function safePath(...segments: string[]): string {
-  // Remove empty segments
-  const filteredSegments = segments.filter(Boolean);
-  
-  if (filteredSegments.length === 0) {
-    return '';
-  }
-  
+export function safeLogFilePath(basePath: string, filename: string): string {
   // Normalize separators to forward slash
-  const normalizedSegments = filteredSegments.map(segment => 
-    segment.replace(/[\\\/]+/g, '/')
-  );
+  const normalizedPath = basePath.replace(/[\\\/]+/g, '/');
+  const normalizedFilename = filename.replace(/[\\\/]+/g, '/');
   
-  // Join segments with forward slash
-  let result = normalizedSegments[0];
+  // Ensure base path ends with a slash
+  const baseWithSlash = normalizedPath.endsWith('/') 
+    ? normalizedPath 
+    : normalizedPath + '/';
   
-  for (let i = 1; i < normalizedSegments.length; i++) {
-    const segment = normalizedSegments[i];
-    
-    // Handle leading/trailing slashes between segments
-    if (result.endsWith('/')) {
-      result += segment.startsWith('/') ? segment.slice(1) : segment;
-    } else {
-      result += segment.startsWith('/') ? segment : '/' + segment;
-    }
-  }
+  // Remove any leading slash from filename
+  const cleanFilename = normalizedFilename.startsWith('/') 
+    ? normalizedFilename.slice(1) 
+    : normalizedFilename;
   
-  return result;
+  // Join the path and filename
+  return baseWithSlash + cleanFilename;
 }
