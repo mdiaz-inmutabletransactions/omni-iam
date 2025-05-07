@@ -5,9 +5,7 @@ const isNodeEnvironment = typeof process !== 'undefined' &&
                           process.versions != null && 
                           process.versions.node != null;
 
-import { time } from 'node:console';
-
-import pino from "pino";
+import { pino, LoggerOptions, TransportTargetOptions } from 'pino';
 
 // Import from the config module
 import { 
@@ -17,7 +15,6 @@ import {
   logDefaults,
   safeLog
 } from '../config/enviroment';
-import { mkdir } from 'node:fs';
 
 // Define log levels as a union type
 export type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal';
@@ -99,11 +96,16 @@ if (isNodeEnvironment && logTargets.includes('file')) {
   // When in Node.js and file logging is requested, set it up immediately
   try {
     // Create file path
-    const logFile = `${logFilePath}/app.log`
+    const logFileAndPath = `${logFilePath}/app.log`
     
+// Call the function to get the transport configuration
+const transportConfig = createPinoConfig(logTargets, logLevel, logFileAndPath);
+
+
+
     // Create destination - use sync mode to ensure immediate writing
     const destination = pino.destination({
-      dest: logFile,
+      dest: logFilePath,
       sync: true, // Use synchronous mode for immediate disk writes
       mkdir: true
     });
@@ -115,7 +117,7 @@ if (isNodeEnvironment && logTargets.includes('file')) {
           target: 'pino/file',
           level: logLevel,
           options: {
-            destination: logFile,
+            destination: logFileAndPath,
             mkdir: true,
             sync: true,
           }
@@ -135,7 +137,7 @@ if (isNodeEnvironment && logTargets.includes('file')) {
 
 
     // Create file logger
-    const Logger = pino(transport, destination);
+    const Logger = pino(transportConfig, destination);
 
       // Update the global logger methods to log to both destinations
       const originalTrace = logger.trace;
@@ -431,4 +433,98 @@ export function formatObject(
   } catch (error) {
     return String(obj);
   }
+}
+
+/**
+ * Creates a Pino logger configuration based on log targets
+ * @param logTargets Array of log targets (e.g. ['console', 'file'])
+ * @param logLevel Log level (default: 'info')
+ * @param logFilePath Path for log files (default: './logs')
+ * @returns Pino LoggerOptions configuration
+ */
+export function createPinoConfig(
+  logTargets: string[],
+  logLevel: string = 'info',
+  logFilePath: string = './logs'
+): LoggerOptions<never, boolean> {
+  // Map log targets to transport targets
+  const targets: TransportTargetOptions[] = [];
+
+  // Process each log target
+  logTargets.forEach(target => {
+    const trimmedTarget = target.trim();
+
+    // Configure console transport
+    if (trimmedTarget === 'console') {
+      targets.push({
+        target: 'pino/file',
+        level: logLevel,
+        options: { destination: 1 } // stdout
+      });
+    }
+
+    // Configure file transport
+    else if (trimmedTarget === 'file') {
+      targets.push({
+        target: 'pino/file',
+        level: logLevel,
+        options: {
+          destination: safePath(logFilePath, 'app.log'),
+          mkdir: true,
+          sync: false
+        }
+      });
+    }
+
+    // Configure OpenTelemetry transport
+    else if (trimmedTarget === 'opentelemetry') {
+      targets.push({
+        target: 'pino-opentelemetry-transport',
+        level: logLevel
+      });
+    }
+  });
+
+  // Return the config with transport object
+  return {
+    level: logLevel,
+    transport: {
+      targets
+    }
+  };
+}
+
+/**
+ * Safely joins path segments in both Node and browser environments
+ * @param {...string} segments Path segments to join
+ * @returns {string} Joined path
+ */
+export function safePath(...segments: string[]): string {
+  // Remove empty segments
+  const filteredSegments = segments.filter(Boolean);
+  
+  if (filteredSegments.length === 0) {
+    return '';
+  }
+  
+  // Normalize separators to forward slash
+  const normalizedSegments = filteredSegments.map(segment => 
+    segment.replace(/[\\\/]+/g, '/')
+  );
+  
+  // Join segments with forward slash
+  let result = normalizedSegments[0];
+  
+  for (let i = 1; i < normalizedSegments.length; i++) {
+    const segment = normalizedSegments[i];
+    
+    // Handle leading/trailing slashes between segments
+    if (result.endsWith('/')) {
+      result += segment.startsWith('/') ? segment.slice(1) : segment;
+    } else {
+      result += segment.startsWith('/') ? segment : '/' + segment;
+    }
+  }
+  
+  return result;
 }
