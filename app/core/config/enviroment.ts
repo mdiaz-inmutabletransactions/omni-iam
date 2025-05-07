@@ -16,21 +16,16 @@ try {
   
   // Only import Node.js modules if we're in a Node.js environment
   if (isNodeEnvironment) {
-    // This will only run on the server, not in the browser
-    // Use dynamic imports for Node.js modules
-    Promise.all([
-      import('fs'),
-      import('path'),
-      import('os'),
-      import('luxon')
-    ]).then(([fsModule, pathModule, osModule, luxonModule]) => {
-      fs = fsModule;
-      path = pathModule;
-      os = osModule;
-      DateTime = luxonModule.DateTime;
-    }).catch(err => {
-      console.warn('Failed to import Node.js modules:', err);
-    });
+    
+    const fsModule = await import('node:fs');
+    const pathModule = await import('node:path');
+    const osModule = await import('node:os');
+    const luxonModule = await import('luxon');
+
+    fs = fsModule.default;
+    path = pathModule.default;
+    os = osModule.default;
+    DateTime  = luxonModule.DateTime;
   }
 } catch (e) {
   // Not in Node.js environment, or imports failed
