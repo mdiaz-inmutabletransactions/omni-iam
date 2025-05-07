@@ -15,7 +15,13 @@ const getViteEnvVariables = () => {
   viteEnvKeys.forEach(key => {
     // Skip functions and internal properties
     if (typeof (ViteEnv as any)[key] !== 'function' && !key.startsWith('_')) {
-      viteEnvValues[key] = (ViteEnv as any)[key];
+      const value = (ViteEnv as any)[key];
+      // Redact sensitive values
+      if (key.includes('SECRET') || key.includes('PASSWORD') || key.includes('TOKEN') || key.includes('KEY') || key.includes('AUTH')) {
+        viteEnvValues[key] = '[REDACTED]';
+      } else {
+        viteEnvValues[key] = value;
+      }
     }
   });
   
@@ -23,6 +29,7 @@ const getViteEnvVariables = () => {
 };
 
 // Get all process.env variables (filtered for safety)
+// This function is only called server-side in the loader
 const getProcessEnvVariables = () => {
   if (typeof process === 'undefined' || !process.env) return {};
   
@@ -91,15 +98,24 @@ export default function DebugEnv() {
         // Add known Vite environment variables
         'NODE_ENV', 'MODE', 'DEV', 'PROD', 'SSR',
         
-        // Add common custom variables
-        //'KRATOS_BASE_URL', 'API_URL', 'BASE_URL'
+        // Add common custom variables - only add VITE_ prefixed ones for client-side
+        'VITE_KRATOS_BASE_URL', 'VITE_PUBLIC_API_URL', 'VITE_PUBLIC_ENV'
       ]);
       
       // Check each variable across all environments
       Array.from(allVarNames).forEach(key => {
-        // 1. Check process.env variables
+        // Skip sensitive variables 
+        if (key.includes('SECRET') || key.includes('PASSWORD') || key.includes('TOKEN') || 
+            key.includes('KEY') || key.includes('AUTH')) {
+          processEnvVars[key] = '[REDACTED]';
+          importMetaEnvVars[key] = '[REDACTED]';
+          viteEnvVars[key] = '[REDACTED]';
+          return;
+        }
+        
+        // 1. Check process.env variables - these will mostly be undefined in browser
         try {
-          // Need to use this approach to avoid reference errors for undefined variables
+          // In the browser, process.env may not exist at all
           const hasProcessEnv = typeof process !== 'undefined' && process.env;
           const value = hasProcessEnv ? (process.env as any)[key] : undefined;
           processEnvVars[key] = value;
@@ -107,7 +123,7 @@ export default function DebugEnv() {
           processEnvVars[key] = undefined;
         }
         
-        // 2. Check import.meta.env variables
+        // 2. Check import.meta.env variables - these are most reliable in browser
         try {
           const hasImportMeta = typeof import.meta !== 'undefined' && import.meta.env;
           const value = hasImportMeta ? (import.meta.env as any)[key] : undefined;
@@ -116,7 +132,7 @@ export default function DebugEnv() {
           importMetaEnvVars[key] = undefined;
         }
         
-        // 3. Check ViteEnv variables
+        // 3. Check ViteEnv variables - this should have both client & server vars
         try {
           const value = (ViteEnv as any)[key];
           viteEnvVars[key] = value;
@@ -250,6 +266,7 @@ export default function DebugEnv() {
           <li>Client-side <code>process.env</code> only works for variables explicitly defined in <code>vite.config.ts</code> using the <code>define</code> option</li>
           <li>Only variables with <code>VITE_</code> prefix are automatically exposed via <code>import.meta.env</code></li>
           <li>Variables marked as <code>[REDACTED]</code> may contain sensitive information</li>
+          <li>Server-only variables will not appear in client-side environment</li>
         </ul>
       </div>
     </div>

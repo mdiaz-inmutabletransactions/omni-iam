@@ -1,13 +1,43 @@
 // app/core/Observability/opentelemetry.ts
 
-import { NodeSDK } from '@opentelemetry/sdk-node';
-import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
-import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-proto';
-import { BatchSpanProcessor } from '@opentelemetry/sdk-trace-base';
-import { resourceFromAttributes } from '@opentelemetry/resources';
-import { SemanticResourceAttributes } from '@opentelemetry/semantic-conventions';
+// Only import Node.js specific modules if we're in a Node.js environment
+// This approach prevents errors in browser environments
+let NodeSDK: any;
+let getNodeAutoInstrumentations: any;
+let OTLPTraceExporter: any;
+let BatchSpanProcessor: any;
+let resourceFromAttributes: any;
+let SemanticResourceAttributes: any;
 
-// Import from shared config instead of directly from ViteEnv
+// Detect if we're in a Node.js environment
+const isNodeEnvironment = typeof process !== 'undefined' && 
+                          process.versions != null && 
+                          process.versions.node != null;
+
+// Only import OpenTelemetry modules in a Node.js environment
+if (isNodeEnvironment) {
+  try {
+    // Dynamic imports for Node.js modules
+    const { NodeSDK: _NodeSDK } = require('@opentelemetry/sdk-node');
+    const { getNodeAutoInstrumentations: _getNodeAutoInstrumentations } = require('@opentelemetry/auto-instrumentations-node');
+    const { OTLPTraceExporter: _OTLPTraceExporter } = require('@opentelemetry/exporter-trace-otlp-proto');
+    const { BatchSpanProcessor: _BatchSpanProcessor } = require('@opentelemetry/sdk-trace-base');
+    const { resourceFromAttributes: _resourceFromAttributes } = require('@opentelemetry/resources');
+    const { SemanticResourceAttributes: _SemanticResourceAttributes } = require('@opentelemetry/semantic-conventions');
+    
+    // Assign to variables
+    NodeSDK = _NodeSDK;
+    getNodeAutoInstrumentations = _getNodeAutoInstrumentations;
+    OTLPTraceExporter = _OTLPTraceExporter;
+    BatchSpanProcessor = _BatchSpanProcessor;
+    resourceFromAttributes = _resourceFromAttributes;
+    SemanticResourceAttributes = _SemanticResourceAttributes;
+  } catch (error) {
+    console.warn('Failed to import OpenTelemetry modules:', error);
+  }
+}
+
+// Import from shared config
 import { 
   getEnv, 
   getBoolEnv, 
@@ -27,7 +57,26 @@ export interface TelemetryConfig {
 
 // Initialize OpenTelemetry
 export function initializeOpenTelemetry(): void {
-  // Load config directly instead of from ViteEnv
+  // Skip if not in Node.js environment
+  if (!isNodeEnvironment) {
+    safeLog('info', {
+      msg: 'OpenTelemetry is only available in Node.js environment',
+      component: 'OpenTelemetry'
+    });
+    return;
+  }
+  
+  // Skip if any required modules are missing
+  if (!NodeSDK || !getNodeAutoInstrumentations || !OTLPTraceExporter || 
+      !BatchSpanProcessor || !resourceFromAttributes || !SemanticResourceAttributes) {
+    safeLog('warn', {
+      msg: 'OpenTelemetry modules not available',
+      component: 'OpenTelemetry'
+    });
+    return;
+  }
+  
+  // Load config directly
   const config = loadTelemetryConfig();
   
   // Skip if disabled
@@ -118,9 +167,9 @@ export function initializeOpenTelemetry(): void {
 function loadTelemetryConfig(): TelemetryConfig {
   return {
     OTEL_ENABLED: getBoolEnv('OTEL_ENABLED', otelDefaults.OTEL_ENABLED === 'true'),
-    OTEL_SERVICE_NAME: getEnv('OTEL_SERVICE_NAME', otelDefaults.OTEL_SERVICE_NAME),
-    OTEL_SERVICE_VERSION: getEnv('OTEL_SERVICE_VERSION', otelDefaults.OTEL_SERVICE_VERSION),
-    OTEL_EXPORTER_OTLP_ENDPOINT: getEnv('OTEL_EXPORTER_OTLP_ENDPOINT', otelDefaults.OTEL_EXPORTER_OTLP_ENDPOINT),
+    OTEL_SERVICE_NAME: getEnv('OTEL_SERVICE_NAME', otelDefaults.OTEL_SERVICE_NAME) || '',
+    OTEL_SERVICE_VERSION: getEnv('OTEL_SERVICE_VERSION', otelDefaults.OTEL_SERVICE_VERSION) || '',
+    OTEL_EXPORTER_OTLP_ENDPOINT: getEnv('OTEL_EXPORTER_OTLP_ENDPOINT', otelDefaults.OTEL_EXPORTER_OTLP_ENDPOINT) || '',
     OTEL_EXPORTER_OTLP_HEADERS: getEnv('OTEL_EXPORTER_OTLP_HEADERS'),
     OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT: getEnv('OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT') 
       ? parseInt(getEnv('OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT')!, 10) 

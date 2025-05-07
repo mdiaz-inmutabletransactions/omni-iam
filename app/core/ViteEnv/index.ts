@@ -1,7 +1,7 @@
 // app/core/ViteEnv/index.ts
 /// <reference path="./types/env.d.ts" />
 
-// Import from the shared config module
+// Import from the shared config module that handles environment detection
 import { 
   getEnv, 
   getBoolEnv, 
@@ -103,7 +103,7 @@ const validators: Record<keyof EnvSchema, GenericValidator> = {
     message: 'Invalid database URL format'
   }),
   TIMEZONE: (value: string) => ({
-    valid: Intl.supportedValuesOf('timeZone').includes(value),
+    valid: true, // Simplified for client compatibility (no Intl.supportedValuesOf in older browsers)
     message: 'Unsupported timezone'
   }),
   LOCALE: (value: string) => ({
@@ -283,7 +283,7 @@ class ViteEnvManager {
       if (key.startsWith('VITE_')) {
         // Client-side environment variables
         // Check if running in browser context
-        if (typeof window !== 'undefined' && 'import' in window) {
+        if (typeof window !== 'undefined' && typeof import.meta !== 'undefined') {
           rawValue = (import.meta.env as any)[key];
         } else if (typeof process !== 'undefined' && process.env) {
           // Server-side access to VITE_ variables (during SSR)
@@ -538,7 +538,7 @@ class ViteEnvManager {
     }
     
     // Log variables with default values in production (potential issue)
-    if (process.env.NODE_ENV === 'production') {
+    if (typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'production') {
       const defaultVarsInProduction = Object.entries(debugInfo)
         .filter(([key, info]) => 
           info.source === 'default' && 

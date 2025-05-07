@@ -1,14 +1,32 @@
 // app/core/Observability/logs.ts
 
-import pino from 'pino';
-import { DateTime } from 'luxon';
+// Detect if we're in a Node.js environment
+const isNodeEnvironment = typeof process !== 'undefined' && 
+                          process.versions != null && 
+                          process.versions.node != null;
+
+// Only import Node.js specific modules if we're in a Node.js environment
+let pino: any;
+let DateTime: any;
+
+// Try to import Node.js modules only in Node.js environment
+if (isNodeEnvironment) {
+  try {
+    pino = require('pino');
+    const { DateTime: LuxonDateTime } = require('luxon');
+    DateTime = LuxonDateTime;
+  } catch (error) {
+    console.warn('Failed to import pino or luxon:', error);
+  }
+}
 
 // Import from the config module
 import { 
   getEnv, 
   getBoolEnv,
   getNumEnv, 
-  logDefaults
+  logDefaults,
+  safeLog
 } from '../config/enviroment';
 
 // Define log levels as a union type
@@ -48,8 +66,8 @@ export interface LogSchema {
   REDACT_FIELDS: string[];
 }
 
-// Type for the logger itself
-export type LoggerInstance = pino.Logger;
+// Type for the logger itself - use any to make it compatible in both environments
+export type LoggerInstance = any;
 
 // Type for logging context - more strictly defined
 export interface LogContext {
@@ -61,6 +79,19 @@ interface TransportTargetOption {
   target: string;
   options: Record<string, any>;
 }
+
+// Simple console logger for browser environments
+const createConsoleLogger = () => {
+  return {
+    trace: (data: any) => console.trace(data),
+    debug: (data: any) => console.debug(data),
+    info: (data: any) => console.info(data),
+    warn: (data: any) => console.warn(data),
+    error: (data: any) => console.error(data),
+    fatal: (data: any) => console.error(data),
+    child: (context: LogContext) => createConsoleLogger() // Return a new instance for child loggers
+  };
+};
 
 class LogManager {
   private static instance: LogManager | null = null;
@@ -102,7 +133,7 @@ class LogManager {
     const logLevelStr = getEnv('LOG_LEVEL', logDefaults.LOG_LEVEL);
     
     return {
-      LOG_LEVEL: this.isValidLogLevel(logLevelStr) ? logLevelStr : 'info',
+      LOG_LEVEL: this.isValidLogLevel(logLevelStr) ? logLevelStr as LogLevel : 'info',
       LOG_TARGETS: logTargets,
       LOG_FORMAT: this.isValidLogFormat(getEnv('LOG_FORMAT', logDefaults.LOG_FORMAT)) 
         ? getEnv('LOG_FORMAT', logDefaults.LOG_FORMAT) as LogFormat 
@@ -133,6 +164,17 @@ class LogManager {
   }
   
   private createLogger(): LoggerInstance {
+    // If we're in a browser or pino isn't available, return a simple console logger
+    if (!isNodeEnvironment || !pino) {
+      safeLog('info', {
+        message: "Using console logger for browser environment",
+        environment: "browser"
+      });
+      return createConsoleLogger();
+    }
+    
+    // From here, we know we're in a Node.js environment with pino available
+    
     // Setup redaction patterns
     const redactOptions: RedactOptions = {
       paths: this.config.REDACT_FIELDS,
@@ -142,12 +184,12 @@ class LogManager {
     // Custom timestamp function to ensure ISO format with timezone
     function timestampFunction() {
       const timezone = getEnv('TIMEZONE', 'UTC');
-      const now = DateTime.now().setZone(timezone);
-      return `,"time":"${now.toISO()}"`;
+      const now = DateTime ? DateTime.now().setZone(timezone) : new Date();
+      return `,"time":"${now.toISOString()}"`;
     }
     
     // Base logger options
-    const baseOptions: pino.LoggerOptions = {
+    const baseOptions: any = {
       level: this.config.LOG_LEVEL,
       redact: redactOptions,
       timestamp: timestampFunction,
@@ -203,30 +245,48 @@ class LogManager {
         });
       }
       
-      // Create logger with transport - fixed type issue
-      // Use the transport property in the options object, not as a second parameter
-      return pino({
-        ...baseOptions,
-        transport: {
-          targets
-        }
-      });
+      try {
+        // Create logger with transport - fixed type issue
+        // Use the transport property in the options object, not as a second parameter
+        return pino({
+          ...baseOptions,
+          transport: {
+            targets
+          }
+        });
+      } catch (error) {
+        safeLog('error', {
+          message: "Failed to create pino logger with transports",
+          error: error instanceof Error ? error.message : String(error)
+        });
+        // Fallback to console logger
+        return createConsoleLogger();
+      }
     } else {
       // No transports, or only console with json format
       // We can use formatters in this case
-      return pino({
-        ...baseOptions,
-        formatters: {
-          level: (label: string) => {
-            return { level: label };
-          },
-          bindings: (bindings: pino.Bindings) => {
-            return this.config.LOG_INCLUDE_HOSTNAME
-              ? bindings
-              : { pid: bindings.pid };
+      try {
+        return pino({
+          ...baseOptions,
+          formatters: {
+            level: (label: string) => {
+              return { level: label };
+            },
+            bindings: (bindings: any) => {
+              return this.config.LOG_INCLUDE_HOSTNAME
+                ? bindings
+                : { pid: bindings.pid };
+            }
           }
-        }
-      });
+        });
+      } catch (error) {
+        safeLog('error', {
+          message: "Failed to create pino logger with formatters",
+          error: error instanceof Error ? error.message : String(error)
+        });
+        // Fallback to console logger
+        return createConsoleLogger();
+      }
     }
   }
   

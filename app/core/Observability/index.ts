@@ -15,9 +15,14 @@ import {
 import type { FormatObjectOptions } from './logUtils';
 import { initializeOpenTelemetry } from './opentelemetry';
 
+// Detect if we're in a Node.js environment
+const isNodeEnvironment = typeof process !== 'undefined' && 
+                        process.versions != null && 
+                        process.versions.node != null;
+
 // Now that the circular dependency is resolved, we can safely use ViteEnv
-// Initialize OpenTelemetry if enabled via ViteEnv
-if (ViteEnv.OTEL_ENABLED) {
+// Initialize OpenTelemetry if enabled via ViteEnv, but only in Node.js environment
+if (isNodeEnvironment && ViteEnv.OTEL_ENABLED) {
   initializeOpenTelemetry();
 }
 
@@ -32,7 +37,8 @@ obsLogger.info({
   msg: "Observability module initialized",
   logLevel: ViteEnv.LOG_LEVEL,
   logTargets: ViteEnv.LOG_TARGETS,
-  otelEnabled: ViteEnv.OTEL_ENABLED
+  otelEnabled: ViteEnv.OTEL_ENABLED,
+  environment: isNodeEnvironment ? 'server' : 'browser'
 });
 
 // Export everything from the observability module
