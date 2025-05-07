@@ -1,7 +1,6 @@
 // app/core/Observability/opentelemetry.ts
 
-// Only import Node.js specific modules if we're in a Node.js environment
-// This approach prevents errors in browser environments
+// For ESM compatibility, we'll use dynamic imports instead of conditional requires
 let NodeSDK: any;
 let getNodeAutoInstrumentations: any;
 let OTLPTraceExporter: any;
@@ -15,25 +14,27 @@ const isNodeEnvironment = typeof process !== 'undefined' &&
                           process.versions.node != null;
 
 // Only import OpenTelemetry modules in a Node.js environment
-if (isNodeEnvironment) {
-  try {
-    // Dynamic imports for Node.js modules
-    const { NodeSDK: _NodeSDK } = require('@opentelemetry/sdk-node');
-    const { getNodeAutoInstrumentations: _getNodeAutoInstrumentations } = require('@opentelemetry/auto-instrumentations-node');
-    const { OTLPTraceExporter: _OTLPTraceExporter } = require('@opentelemetry/exporter-trace-otlp-proto');
-    const { BatchSpanProcessor: _BatchSpanProcessor } = require('@opentelemetry/sdk-trace-base');
-    const { resourceFromAttributes: _resourceFromAttributes } = require('@opentelemetry/resources');
-    const { SemanticResourceAttributes: _SemanticResourceAttributes } = require('@opentelemetry/semantic-conventions');
-    
-    // Assign to variables
-    NodeSDK = _NodeSDK;
-    getNodeAutoInstrumentations = _getNodeAutoInstrumentations;
-    OTLPTraceExporter = _OTLPTraceExporter;
-    BatchSpanProcessor = _BatchSpanProcessor;
-    resourceFromAttributes = _resourceFromAttributes;
-    SemanticResourceAttributes = _SemanticResourceAttributes;
-  } catch (error) {
-    console.warn('Failed to import OpenTelemetry modules:', error);
+async function loadNodeModules() {
+  if (isNodeEnvironment) {
+    try {
+      // Dynamic imports for Node.js modules
+      const { NodeSDK: _NodeSDK } = await import('@opentelemetry/sdk-node');
+      const { getNodeAutoInstrumentations: _getNodeAutoInstrumentations } = await import('@opentelemetry/auto-instrumentations-node');
+      const { OTLPTraceExporter: _OTLPTraceExporter } = await import('@opentelemetry/exporter-trace-otlp-proto');
+      const { BatchSpanProcessor: _BatchSpanProcessor } = await import('@opentelemetry/sdk-trace-base');
+      const { resourceFromAttributes: _resourceFromAttributes } = await import('@opentelemetry/resources');
+      const { SemanticResourceAttributes: _SemanticResourceAttributes } = await import('@opentelemetry/semantic-conventions');
+      
+      // Assign to variables
+      NodeSDK = _NodeSDK;
+      getNodeAutoInstrumentations = _getNodeAutoInstrumentations;
+      OTLPTraceExporter = _OTLPTraceExporter;
+      BatchSpanProcessor = _BatchSpanProcessor;
+      resourceFromAttributes = _resourceFromAttributes;
+      SemanticResourceAttributes = _SemanticResourceAttributes;
+    } catch (error) {
+      console.warn('Failed to import OpenTelemetry modules:', error);
+    }
   }
 }
 
@@ -56,7 +57,10 @@ export interface TelemetryConfig {
 }
 
 // Initialize OpenTelemetry
-export function initializeOpenTelemetry(): void {
+export async function initializeOpenTelemetry(): Promise<void> {
+  // Load modules first
+  await loadNodeModules();
+  
   // Skip if not in Node.js environment
   if (!isNodeEnvironment) {
     safeLog('info', {

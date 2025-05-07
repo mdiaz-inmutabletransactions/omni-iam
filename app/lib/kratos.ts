@@ -1,17 +1,26 @@
 // app/lib/kratos.ts - update to use Observability
 
 import { ViteEnv } from "../core/ViteEnv/index";
-// Replace the existing logger import with our new Observability module
+// Import the basic logger from Observability
 import { 
-  createComponentLogger, 
-  createOperationLogger,
+  logger,
   redactSensitiveInfo
 } from '../core/Observability';
 
 const KRATOS_BASE_URL = ViteEnv.KRATOS_BASE_URL;
 
-// Create a component-specific logger for Kratos
-const kratosLogger = createComponentLogger('kratos-service');
+// Create a basic component logger that works synchronously
+const kratosLogger = logger.child({ component: 'kratos-service' });
+
+// Helper function to create operation loggers synchronously
+function getOperationLogger(operation: string, requestId: string = crypto.randomUUID(), context: Record<string, any> = {}) {
+  return logger.child({
+    operation,
+    requestId,
+    'event.name': operation,
+    ...context
+  });
+}
 
 // Types for Kratos responses (keep these as they are)
 export interface KratosFlow {
@@ -46,7 +55,7 @@ const kratosHeaders = {
 const debugLoggingMiddleware = {
   request: (requestId: string = crypto.randomUUID()) => (url: string, options: RequestInit): [string, RequestInit] => {
     // Create an operation-specific logger for this request
-    const requestLogger = createOperationLogger('kratos-request', requestId, {
+    const requestLogger = getOperationLogger('kratos-request', requestId, {
       method: options.method || 'GET',
       url,
       'http.method': options.method || 'GET',
@@ -81,7 +90,7 @@ const debugLoggingMiddleware = {
     const serverCorrelationId = response.headers.get('Set-Correlation-ID') || 'none';
     
     // Create a response-specific logger
-    const responseLogger = createOperationLogger('kratos-response', clientCorrelationId, {
+    const responseLogger = getOperationLogger('kratos-response', clientCorrelationId, {
       correlationId: serverCorrelationId,
       status: response.status,
       url: response.url,
@@ -132,8 +141,8 @@ async function kratosFetch<T = any>(
   retryCount = 0
 ): Promise<T> {
   const requestId = crypto.randomUUID();
-  // Use an operation logger for the fetch operation
-  const requestLogger = createOperationLogger('kratos-fetch', requestId, {
+  // Use a synchronous operation logger
+  const requestLogger = getOperationLogger('kratos-fetch', requestId, {
     endpoint,
     retry: retryCount
   });
@@ -200,8 +209,8 @@ async function kratosFetch<T = any>(
 // Initialize a login flow
 export async function initLoginFlow(debug = false): Promise<KratosFlow> {
   const requestId = crypto.randomUUID();
-  // Use an operation logger for the login flow
-  const flowLogger = createOperationLogger('init-login-flow', requestId, {
+  // Use a synchronous operation logger
+  const flowLogger = getOperationLogger('init-login-flow', requestId, {
     component: 'authentication',
     'event.name': 'login.flow.init'
   });
@@ -230,8 +239,8 @@ export async function initLoginFlow(debug = false): Promise<KratosFlow> {
 // Initialize a registration flow
 export async function initRegistrationFlow(debug = false): Promise<KratosFlow> {
   const requestId = crypto.randomUUID();
-  // Use an operation logger for the registration flow
-  const flowLogger = createOperationLogger('init-registration-flow', requestId, {
+  // Use a synchronous operation logger
+  const flowLogger = getOperationLogger('init-registration-flow', requestId, {
     component: 'authentication',
     'event.name': 'registration.flow.init'
   });
@@ -250,8 +259,8 @@ export async function initRegistrationFlow(debug = false): Promise<KratosFlow> {
 // Submit login form
 export async function submitLogin(flowId: string, body: any, debug = false): Promise<any> {
   const requestId = crypto.randomUUID();
-  // Use an operation logger for the login submission
-  const loginLogger = createOperationLogger('submit-login', requestId, { 
+  // Use a synchronous operation logger
+  const loginLogger = getOperationLogger('submit-login', requestId, { 
     flowId,
     component: 'authentication',
     'event.name': 'login.submit',
@@ -293,8 +302,8 @@ export async function submitLogin(flowId: string, body: any, debug = false): Pro
 
 // Error handling
 async function parseKratosError(response: Response, requestId: string): Promise<KratosError> {
-  // Use an error-specific logger
-  const errorLogger = createOperationLogger('kratos-error', requestId, { 
+  // Use a synchronous error-specific logger
+  const errorLogger = getOperationLogger('kratos-error', requestId, { 
     status: response.status,
     url: response.url,
     component: 'error-handler',

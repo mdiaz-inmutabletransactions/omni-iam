@@ -23,23 +23,41 @@ const isNodeEnvironment = typeof process !== 'undefined' &&
 // Now that the circular dependency is resolved, we can safely use ViteEnv
 // Initialize OpenTelemetry if enabled via ViteEnv, but only in Node.js environment
 if (isNodeEnvironment && ViteEnv.OTEL_ENABLED) {
-  initializeOpenTelemetry();
+  // Call the async function but don't await it
+  initializeOpenTelemetry().catch(err => {
+    console.error('Failed to initialize OpenTelemetry:', err);
+  });
 }
 
-// Set up an initialization example with structured logging
-const obsLogger = createContextLogger({
-  component: 'Observability',
-  module: 'core',
-  operation: 'initialization'
-});
-
-obsLogger.info({
+// Use the basic logger for initialization since createContextLogger is now async
+console.info({
   msg: "Observability module initialized",
   logLevel: ViteEnv.LOG_LEVEL,
   logTargets: ViteEnv.LOG_TARGETS,
   otelEnabled: ViteEnv.OTEL_ENABLED,
   environment: isNodeEnvironment ? 'server' : 'browser'
 });
+
+// Initialize logger asynchronously (but don't block module initialization)
+(async () => {
+  try {
+    const obsLogger = await createContextLogger({
+      component: 'Observability',
+      module: 'core',
+      operation: 'initialization'
+    });
+    
+    obsLogger.info({
+      msg: "Observability context logger initialized",
+      logLevel: ViteEnv.LOG_LEVEL,
+      logTargets: ViteEnv.LOG_TARGETS,
+      otelEnabled: ViteEnv.OTEL_ENABLED,
+      environment: isNodeEnvironment ? 'server' : 'browser'
+    });
+  } catch (error) {
+    console.error('Failed to initialize Observability logger:', error);
+  }
+})();
 
 // Export everything from the observability module
 export {

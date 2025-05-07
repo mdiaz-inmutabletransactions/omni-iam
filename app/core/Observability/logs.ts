@@ -6,18 +6,30 @@ const isNodeEnvironment = typeof process !== 'undefined' &&
                           process.versions.node != null;
 
 // Only import Node.js specific modules if we're in a Node.js environment
-let pino: any;
-let DateTime: any;
+let pino: any = null;
+let DateTime: any = null;
+let pinoImportPromise: Promise<void> | null = null;
 
 // Try to import Node.js modules only in Node.js environment
 if (isNodeEnvironment) {
-  try {
-    pino = require('pino');
-    const { DateTime: LuxonDateTime } = require('luxon');
-    DateTime = LuxonDateTime;
-  } catch (error) {
-    console.warn('Failed to import pino or luxon:', error);
-  }
+  // Create a promise to track when imports are complete
+  pinoImportPromise = (async () => {
+    try {
+      // Use dynamic imports for Node.js modules
+      const [pinoModule, luxonModule] = await Promise.all([
+        import('pino'),
+        import('luxon')
+      ]);
+      
+      // Store the imported modules
+      pino = pinoModule.default || pinoModule;
+      DateTime = luxonModule.DateTime;
+      
+      console.log('Successfully imported pino and luxon');
+    } catch (error) {
+      console.warn('Failed to import pino or luxon:', error);
+    }
+  })();
 }
 
 // Import from the config module
@@ -97,10 +109,38 @@ class LogManager {
   private static instance: LogManager | null = null;
   private logger: LoggerInstance;
   private config: LogSchema;
+  private initialized: boolean = false;
+  private initPromise: Promise<void>;
   
   private constructor() {
     this.config = this.loadConfiguration();
-    this.logger = this.createLogger();
+    this.logger = createConsoleLogger(); // Start with console logger
+    
+    // Create and store initialization promise
+    this.initPromise = this.initialize();
+  }
+  
+  // Async initialization
+  private async initialize(): Promise<void> {
+    // Wait for Pino import if we're in Node environment
+    if (isNodeEnvironment && pinoImportPromise) {
+      try {
+        await pinoImportPromise;
+        
+        // Check if pino was successfully imported
+        if (pino) {
+          // Now create the real logger
+          this.logger = await this.createPinoLogger();
+          console.log('Pino logger initialized successfully');
+        } else {
+          console.warn('Pino import completed but pino is not available');
+        }
+      } catch (error) {
+        console.error('Failed to initialize Pino logger:', error);
+      }
+    }
+    
+    this.initialized = true;
   }
   
   private loadConfiguration(): LogSchema {
@@ -163,136 +203,93 @@ class LogManager {
     return !!format && ['json', 'pretty'].includes(format);
   }
   
-  private createLogger(): LoggerInstance {
-    // If we're in a browser or pino isn't available, return a simple console logger
-    if (!isNodeEnvironment || !pino) {
+  // Make this method async to use await inside
+  private async createPinoLogger(): Promise<LoggerInstance> {
+    // If pino isn't available, return a simple console logger
+    if (!pino) {
       safeLog('info', {
-        message: "Using console logger for browser environment",
-        environment: "browser"
+        message: "Pino not available, using console logger as fallback",
+        environment: isNodeEnvironment ? "server" : "browser"
       });
       return createConsoleLogger();
     }
     
-    // From here, we know we're in a Node.js environment with pino available
-    
-    // Setup redaction patterns
-    const redactOptions: RedactOptions = {
-      paths: this.config.REDACT_FIELDS,
-      censor: '[REDACTED]'
-    };
-    
-    // Custom timestamp function to ensure ISO format with timezone
-    function timestampFunction() {
-      const timezone = getEnv('TIMEZONE', 'UTC');
-      const now = DateTime ? DateTime.now().setZone(timezone) : new Date();
-      return `,"time":"${now.toISOString()}"`;
-    }
-    
-    // Base logger options
-    const baseOptions: any = {
-      level: this.config.LOG_LEVEL,
-      redact: redactOptions,
-      timestamp: timestampFunction,
-    };
-    
-    // If using transports, we need to avoid using formatters
-    if (this.config.LOG_TARGETS.length > 0 && 
-       (this.config.LOG_TARGETS.includes('file') || 
-        this.config.LOG_TARGETS.includes('opentelemetry') || 
-        (this.config.LOG_TARGETS.includes('console') && this.config.LOG_FORMAT === 'pretty'))) {
-      
-      const targets: TransportTargetOption[] = [];
-      
-      // Configure transports based on targets
-      if (this.config.LOG_TARGETS.includes('console')) {
-        if (this.config.LOG_FORMAT === 'pretty') {
-          targets.push({
-            target: 'pino-pretty',
-            options: {
-              colorize: true,
-              translateTime: true,
-              ignore: 'pid,hostname'
-            }
-          });
-        } else {
-          targets.push({
-            target: 'pino/file',
-            options: { destination: 1 } // stdout
-          });
+    try {
+      // Validate that we can access necessary file system functions
+      if (this.config.LOG_TARGETS.includes('file')) {
+        const fs = await import('fs');
+        const path = await import('path');
+        
+        const logDir = this.config.LOG_FILE_PATH || './logs';
+        
+        // Ensure log directory exists
+        if (!fs.existsSync(logDir)) {
+          fs.mkdirSync(logDir, { recursive: true });
+          console.log(`Created log directory: ${logDir}`);
         }
       }
       
-      if (this.config.LOG_TARGETS.includes('file')) {
-        targets.push({
-          target: 'pino/file',
-          options: {
-            destination: `${this.config.LOG_FILE_PATH}/app.log`,
-            mkdir: true
-          }
-        });
+      // Setup redaction patterns
+      const redactOptions: RedactOptions = {
+        paths: this.config.REDACT_FIELDS,
+        censor: '[REDACTED]'
+      };
+      
+      // Custom timestamp function to ensure ISO format with timezone
+      function timestampFunction() {
+        const timezone = getEnv('TIMEZONE', 'UTC');
+        const now = DateTime ? DateTime.now().setZone(timezone) : new Date();
+        return `,"time":"${now.toISOString()}"`;
       }
       
-      if (this.config.LOG_TARGETS.includes('opentelemetry')) {
-        const serviceName = getEnv('OTEL_SERVICE_NAME', 'omni-iam');
-        const serviceVersion = getEnv('OTEL_SERVICE_VERSION', '1.0.0');
-        
-        targets.push({
-          target: 'pino-opentelemetry-transport',
-          options: {
-            serviceName,
-            serviceVersion
-          }
-        });
-      }
+      // Base logger options
+      const baseOptions: any = {
+        level: this.config.LOG_LEVEL,
+        redact: redactOptions,
+        timestamp: timestampFunction,
+      };
       
-      try {
-        // Create logger with transport - fixed type issue
-        // Use the transport property in the options object, not as a second parameter
-        return pino({
-          ...baseOptions,
-          transport: {
-            targets
-          }
-        });
-      } catch (error) {
-        safeLog('error', {
-          message: "Failed to create pino logger with transports",
-          error: error instanceof Error ? error.message : String(error)
-        });
-        // Fallback to console logger
-        return createConsoleLogger();
+      // Use a simple file destination for file logging
+      if (this.config.LOG_TARGETS.includes('file') && this.config.LOG_FILE_PATH) {
+        try {
+          const fs = await import('fs');
+          const path = await import('path');
+          
+          const logDir = this.config.LOG_FILE_PATH;
+          const logFile = path.join(logDir, 'app.log');
+          
+          // Create a writable stream for the log file
+          const fileStream = fs.createWriteStream(logFile, { flags: 'a' });
+          
+          // Create a multistream with console and file
+          const streams = [
+            { stream: process.stdout },
+            { stream: fileStream }
+          ];
+          
+          // Use Pino's multistream
+          const { multistream } = await import('pino-multi-stream');
+          return pino(baseOptions, multistream(streams));
+        } catch (err) {
+          console.error('Failed to create file stream:', err);
+          // Fall back to standard Pino logger
+          return pino(baseOptions);
+        }
+      } else {
+        // Standard Pino logger
+        return pino(baseOptions);
       }
-    } else {
-      // No transports, or only console with json format
-      // We can use formatters in this case
-      try {
-        return pino({
-          ...baseOptions,
-          formatters: {
-            level: (label: string) => {
-              return { level: label };
-            },
-            bindings: (bindings: any) => {
-              return this.config.LOG_INCLUDE_HOSTNAME
-                ? bindings
-                : { pid: bindings.pid };
-            }
-          }
-        });
-      } catch (error) {
-        safeLog('error', {
-          message: "Failed to create pino logger with formatters",
-          error: error instanceof Error ? error.message : String(error)
-        });
-        // Fallback to console logger
-        return createConsoleLogger();
-      }
+    } catch (error) {
+      console.error('Error creating Pino logger:', error);
+      return createConsoleLogger();
     }
   }
   
-  public static getInstance(): LogManager {
+  public static async getInstance(): Promise<LogManager> {
     if (!LogManager.instance) {
       LogManager.instance = new LogManager();
+      // Ensure initialization is complete
+      await LogManager.instance.initPromise;
     }
     return LogManager.instance;
   }
@@ -310,30 +307,44 @@ class LogManager {
     return { ...this.config };
   }
   
-  public setConfig(config: Partial<LogSchema>): void {
+  public async setConfig(config: Partial<LogSchema>): Promise<void> {
+    // Ensure initialization is complete
+    await this.initPromise;
+    
     this.config = { ...this.config, ...config };
-    this.logger = this.createLogger();
+    this.logger = await this.createPinoLogger();
   }
   
   // Helper to create context-specific loggers
-  public static createContextLogger(context: LogContext = {}): LoggerInstance {
-    return LogManager.getInstance().createChildLogger(context);
+  public static async createContextLogger(context: LogContext = {}): Promise<LoggerInstance> {
+    const instance = await LogManager.getInstance();
+    return instance.createChildLogger(context);
   }
 
   // For testing and debugging
-  public static resetLogger(): void {
-    LogManager.instance = new LogManager();
+  public static async resetLogger(): Promise<void> {
+    const instance = new LogManager();
+    await instance.initPromise;
+    LogManager.instance = instance;
   }
 }
 
-// Export the singleton logger instance
-export const logger = LogManager.getInstance().getLogger();
+// Create a temporary console logger to use until the real logger is initialized
+const tempLogger = createConsoleLogger();
 
-// Export helper functions for creating context loggers
-export const createContextLogger = LogManager.createContextLogger;
+// Export the logger instance
+export const logger = tempLogger;
+
+// Export helper functions for creating context loggers - note these now return promises
+export const createContextLogger = async (context: LogContext = {}): Promise<LoggerInstance> => {
+  return LogManager.createContextLogger(context);
+};
 
 // Export the manager itself for advanced usage
-export const logManager = LogManager.getInstance();
+export const logManager = {
+  getInstance: LogManager.getInstance,
+  resetLogger: LogManager.resetLogger
+};
 
 // Define extensions to make logging more consistent
 export const logInfo = (data: Record<string, any>): void => {
