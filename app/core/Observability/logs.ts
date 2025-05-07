@@ -5,6 +5,7 @@ const isNodeEnvironment = typeof process !== 'undefined' &&
                           process.versions != null && 
                           process.versions.node != null;
 
+import { time } from 'node:console';
 // Import from the config module
 import { 
   getEnv, 
@@ -13,6 +14,7 @@ import {
   logDefaults,
   safeLog
 } from '../config/enviroment';
+import { mkdir } from 'node:fs';
 
 // Define log levels as a union type
 export type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal';
@@ -119,12 +121,35 @@ if (isNodeEnvironment && logTargets.includes('file')) {
             sync: true, // Use synchronous mode for immediate disk writes
             mkdir: true
           });
+
+          const transport = pino.transport({
+            
+              targets: [ 
+                {
+                  target: 'pino/file',
+                  level: logLevel,
+                  options: {
+                    destination: logFile,
+                    append: false,
+                    mkdir: true,
+                    sync: true,}
+                  
+                },
+                {
+                  target: 'pino-pretty',
+                  level: logLevel,
+                  options: {
+                  colorize: true,
+                  ignore: 'pid,hostname',
+                  }
+                  
+                }
+              ]
+            });
+          
           
           // Create file logger
-          const fileLogger = pino({
-            level: logLevel,
-            timestamp: true // Ensure timestamps are included
-          }, destination);
+          const fileLogger = pino(transport);
           
           // Set up dual logging if console is also requested
           if (logTargets.includes('console')) {

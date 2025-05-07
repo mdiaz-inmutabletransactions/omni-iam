@@ -158,7 +158,7 @@ function formatLogEntry(level: string, data: any): string {
   
   // Create an object that matches Pino's format exactly
   const logObject: Record<string, any> = {
-    level: levelToNumber(level),
+    level: level.toLowerCase(),
     time,
     pid: process.pid,
     hostname: systemHostname // Use the cached hostname
