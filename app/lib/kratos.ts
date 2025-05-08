@@ -4,13 +4,18 @@ import { ViteEnv } from "../core/ViteEnv/index";
 // Import the basic logger from Observability
 import { 
   logger,
-  redactSensitiveInfo
+  redactSensitiveInfo,
+  createComponentLogger,
+  createOperationLogger,
 } from '../core/Observability';
 
 const KRATOS_BASE_URL = ViteEnv.KRATOS_BASE_URL;
 
 // Create a basic component logger that works synchronously
 const kratosLogger = logger.child({ component: 'kratos-service' });
+const KratosComponentLoger = createComponentLogger('Kratos-service');
+const KratosOperationLoger = createOperationLogger('Kratos-service');
+
 
 // Helper function to create operation loggers synchronously
 function getOperationLogger(operation: string, requestId: string = crypto.randomUUID(), context: Record<string, any> = {}) {
@@ -55,20 +60,27 @@ const kratosHeaders = {
 const debugLoggingMiddleware = {
   request: (requestId: string = crypto.randomUUID()) => (url: string, options: RequestInit): [string, RequestInit] => {
     // Create an operation-specific logger for this request
-    const requestLogger = getOperationLogger('kratos-request', requestId, {
+    
+    /*const requestLogger = getOperationLogger('kratos-request', requestId, {
       method: options.method || 'GET',
       url,
       'http.method': options.method || 'GET',
       'http.url': url,
       'http.request_id': requestId
-    });
-    
-    // Log at INFO level
-    requestLogger.info({
-      msg: 'Kratos API Request',
+    }); */
+
+    KratosOperationLoger.info({
+      msg: 'Kratos API TEST KARATOS REQUEST INFO',
       headers: redactSensitiveInfo(options.headers),
       payload: options.body ? tryParseJSON(options.body as string) : undefined
     });
+    
+    // Log at INFO level
+    /*requestLogger.info({
+      msg: 'Kratos API Request',
+      headers: redactSensitiveInfo(options.headers),
+      payload: options.body ? tryParseJSON(options.body as string) : undefined
+    });*/
     
     // Add correlation ID to request headers for distributed tracing
     const enhancedOptions = {
@@ -90,13 +102,13 @@ const debugLoggingMiddleware = {
     const serverCorrelationId = response.headers.get('Set-Correlation-ID') || 'none';
     
     // Create a response-specific logger
-    const responseLogger = getOperationLogger('kratos-response', clientCorrelationId, {
+  /*  const responseLogger = getOperationLogger('kratos-response', clientCorrelationId, {
       correlationId: serverCorrelationId,
       status: response.status,
       url: response.url,
       'http.status_code': response.status,
       'http.response_url': response.url
-    });
+    });*/
     
     let responseBody;
     try {
@@ -108,13 +120,19 @@ const debugLoggingMiddleware = {
         responseBody = '[Unable to read response body]';
       }
     }
-    
-    // Log at INFO level
-    responseLogger.info({
-      msg: `Kratos API Response ${response.ok ? '(Success)' : '(Error)'}`,
+
+    KratosOperationLoger.info({
+      msg: 'Kratos API TEST KARATOS RESPONSE INFO',
       headers: Object.fromEntries(clone.headers.entries()),
       body: redactSensitiveInfo(responseBody)
     });
+    
+    // Log at INFO level
+   /*responseLogger.info({
+      msg: `Kratos API Response ${response.ok ? '(Success)' : '(Error)'}`,
+      headers: Object.fromEntries(clone.headers.entries()),
+      body: redactSensitiveInfo(responseBody)
+    });*/
 
     return response;
   }
