@@ -493,13 +493,22 @@ export function createPinoConfig(
 
   // Return the config with transport object
   return {
+      // does not work with multiple targets
+      // formatters: {
+      //   level: (label) => {
+      //     return { level: label };
+      //   },
+      // },
+   
+      // available workaraund
+
     level: logLevel,
-    formatters: {
-      level: (label, number) => ({ level: `${label.toUpperCase()}(${number})` }),
-    },
+    depthLimit:5,
+    edgeLimit:100,
+    customLevels: 'trace:10,debug:20,info:30,warn:40,error:50,fatal:60',
     timestamp: () => `,"time":"${time}"`,
     transport: {
-      targets
+      targets,
     }
   };
 }
