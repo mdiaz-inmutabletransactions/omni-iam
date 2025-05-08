@@ -301,7 +301,7 @@ The debug page is designed to work in both server and browser environments, with
 6. **Leverage ViteEnv integration**: Use environment variables from ViteEnv
    ```typescript
    // Timezone from ViteEnv used for timestamps
-   timestamp: () => `,"time":"${DateTime.now().setZone(ViteEnv.TIMEZONE).toISOS()}"`,
+   timestamp: () => `,"time":"${DateTime.now().setZone(ViteEnv.TIMEZONE).toISO()}"`,
    ```
 
 ## Performance Considerations

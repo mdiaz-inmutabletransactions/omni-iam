@@ -153,6 +153,7 @@ export function safeLog(level: string, data: any, ...args: any[]): void {
       // Only attempt file logging if we have the right modules
       const logLevel = getEnv('LOG_LEVEL', logDefaults.LOG_LEVEL);
       const logTargets = getEnv('LOG_TARGETS', logDefaults.LOG_TARGETS)?.split(',') || ['console'];
+      const timezone = getEnv('TIMEZONE', logDefaults.TIMEZONE) || 'UTC';
       
       // Check if file logging is enabled
       if (logTargets.includes('file')) {
@@ -166,7 +167,7 @@ export function safeLog(level: string, data: any, ...args: any[]): void {
           }
           
           // Format log entry
-          const time = DateTime ? DateTime.now().toISO() : new Date().toISOString();
+          const time = DateTime ? DateTime.now().setZone(timezone).toISO() : new Date().toISOString();
           let logMessage;
           
           if (typeof data === 'object') {

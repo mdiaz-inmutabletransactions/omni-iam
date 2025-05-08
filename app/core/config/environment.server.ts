@@ -112,13 +112,6 @@ function getTimezone(): string {
   return getEnv('TIMEZONE', logDefaults.TIMEZONE) || 'UTC';
 }
 
-// Custom timestamp function that matches the exact format needed
-function timestampGenerator() {
-  // Format: "time":"2025-05-05T23:34:45.347-06:00"
-  const now = DateTime.now().setZone(getTimezone());
-  return `,"time":"${now.toISO()}"`;
-}
-
 // Helper to convert log level to Pino numeric level
 function levelToNumber(level: string): number {
   switch (level.toLowerCase()) {
@@ -154,7 +147,7 @@ function ensureLogDirectorySync(dirPath: string): void {
 
 // Custom log formatter with string parsing to object
 function formatLogEntry(level: string, data: any): string {
-  const time = DateTime.now().setZone(getTimezone()).toISO();
+  const time = DateTime ? DateTime.now().setZone(getTimezone()).toISO() : new Date().toISOString();
   
   // Create an object that matches Pino's format exactly
   const logObject: Record<string, any> = {

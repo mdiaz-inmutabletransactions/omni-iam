@@ -16,6 +16,9 @@ import {
   safeLog
 } from '../config/enviroment';
 
+import { get } from 'node:http';
+import { DateTime } from 'luxon';
+
 // Define log levels as a union type
 export type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal';
 
@@ -84,6 +87,7 @@ const logTargetsStr = getEnv('LOG_TARGETS', logDefaults.LOG_TARGETS);
 const logTargets = logTargetsStr ? logTargetsStr.split(',').map(t => t.trim()) : ['console'];
 const logFilePath = getEnv('LOG_FILE_PATH', logDefaults.LOG_FILE_PATH) || './logs';
 const logFormat = getEnv('LOG_FORMAT', logDefaults.LOG_FORMAT) || 'json';
+const logTimeZone = getEnv('TIMEZONE', logDefaults.TIMEZONE)
 
 console.log(`Initializing logger with targets: ${logTargets.join(', ')}, format: ${logFormat}, path: ${logFilePath}`);
 
@@ -446,6 +450,7 @@ export function createPinoConfig(
 ): LoggerOptions<never, boolean> {
   // Map log targets to transport targets
   const targets: TransportTargetOptions[] = [];
+  const time = DateTime.now().setZone(logTimeZone).toISO();
 
   // Process each log target
   logTargets.forEach(target => {
@@ -473,7 +478,7 @@ export function createPinoConfig(
           destination: file,
           mkdir: true,
           sync: true,
-        }
+        },
       });
     }
 
@@ -489,6 +494,10 @@ export function createPinoConfig(
   // Return the config with transport object
   return {
     level: logLevel,
+    formatters: {
+      level: (label, number) => ({ level: `${label.toUpperCase()}(${number})` }),
+    },
+    timestamp: () => `,"time":"${time}"`,
     transport: {
       targets
     }
