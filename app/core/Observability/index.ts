@@ -25,8 +25,12 @@ import {
   getTraceparentHeader,
   toOtelLogRecord,
   createSpanContext,
-  getTraceContext
+  getTraceContext,
+
+  setTraceContext,
+  createNewSpan,
 } from './logUtils';
+
 import type { FormatObjectOptions } from './logUtils';
 import { initializeOpenTelemetry } from './opentelemetry';
 
@@ -103,6 +107,8 @@ export {
   toOtelLogRecord,
   createSpanContext,
   getTraceContext,
+  setTraceContext,
+  createNewSpan,
 };
 
 // Export types properly with export type

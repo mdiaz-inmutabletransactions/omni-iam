@@ -10,7 +10,9 @@ import {
   createSpanContext,
   getTraceparentHeader,
   toOtelLogRecord,
-  getTraceContext
+  getTraceContext,
+  setTraceContext,
+  createNewSpan
 } from './logs';
 
 // Format options interface for better type checking
@@ -60,7 +62,7 @@ export function formatObject(
  * @param additionalContext Additional context to include with all logs
  * @returns A promise logger instance with component context
  */
-export async function createComponentLogger(
+/*export async function createComponentLogger(
   componentName: string,
   additionalContext: LogContext = {}
 ): Promise<LoggerInstance> {
@@ -71,7 +73,25 @@ export async function createComponentLogger(
     'telemetry.sdk.language': 'javascript',
     ...additionalContext
   });
+}*/
+
+export function createComponentLogger(
+  componentName: string,
+  additionalContext: LogContext = {}
+): LoggerInstance {
+  // Create context with OpenTelemetry semantic conventions
+  const context: LogContext = {
+    'component': componentName,
+    'code.namespace': componentName,
+    'telemetry.sdk.name': 'opentelemetry',
+    'telemetry.sdk.language': 'javascript',
+    ...additionalContext
+  };
+  
+  // The trace context will be handled by createContextLogger
+  return createContextLogger(context);
 }
+
 
 /**
  * Creates a logger for a specific operation with standardized context and request tracking
@@ -81,7 +101,7 @@ export async function createComponentLogger(
  * @param additionalContext Additional context to include with all logs
  * @returns A promise logger instance with operation context
  */
-export async function createOperationLogger(
+/*export async function createOperationLogger(
   operationName: string,
   requestId: string = crypto.randomUUID(),
   additionalContext: LogContext = {}
@@ -100,7 +120,35 @@ export async function createOperationLogger(
     ...spanContext,
     ...additionalContext
   });
+}*/
+export function createOperationLogger(
+  operationName: string,
+  requestId: string = crypto.randomUUID(),
+  additionalContext: LogContext = {}
+): LoggerInstance {
+  // Create span context for the operation
+  const spanContext = createSpanContext(operationName, {
+    'operation.name': operationName,
+    ...additionalContext
+  });
+  
+  // Create context with OpenTelemetry semantic conventions
+  const context: LogContext = {
+    'operation': operationName,
+    requestId,
+    'event.name': operationName,
+    'code.function': operationName,
+    // Use the trace context from spanContext
+    trace_id: spanContext.trace_id,
+    span_id: spanContext.span_id,
+    parent_span_id: spanContext.parent_span_id,
+    trace_flags: spanContext.trace_flags,
+    ...additionalContext
+  };
+  
+  return createContextLogger(context);
 }
+
 
 /**
  * Creates a request-scoped logger with HTTP context following OpenTelemetry semantic conventions
@@ -424,3 +472,7 @@ export { toOtelLogRecord };
 export { createSpanContext };
 
 export { getTraceContext}
+
+export { setTraceContext }
+
+export { createNewSpan }

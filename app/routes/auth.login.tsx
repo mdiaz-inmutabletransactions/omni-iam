@@ -6,19 +6,16 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { 
+  logger,
   createComponentLogger, 
   createOperationLogger, 
-  createRequestLogger, 
-  createEventLogger,
-  createMetricLogger,
-  logError,
+  createRequestLogger,
   getTraceContext,
+  setTraceContext
 } from "~/core/Observability";
 
 // Create component logger for this route
 const routeLogger = createComponentLogger("AuthLoginRoute");
-const authEvents = await createEventLogger("auth");
-const metrics = await createMetricLogger();
 
 // Create zod schema for login validation
 const loginSchema = z.object({
@@ -31,7 +28,9 @@ export const loader: LoaderFunction = async ({ request }) => {
   // Create request-specific logger with the HTTP context
   // This will extract trace context from the request headers if available
   const reqLogger = await createRequestLogger(request, { route: "auth.login" });
-  const traceContext = getTraceContext(); // Get the current trace context
+  
+  // Get the current trace context
+  const traceContext = getTraceContext();
   
   reqLogger.info("Login page visited");
   
@@ -43,9 +42,9 @@ export const loader: LoaderFunction = async ({ request }) => {
       reqLogger.info("Already authenticated user visited login page", { userId });
       
       // Track this as a business metric - use the same trace context
-      const metrics = reqLogger.child({
+      const metrics = logger.child({
         'telemetry.type': 'metric',
-        // Preserve trace context
+        // Use the standardized trace context field names
         trace_id: traceContext.traceId,
         span_id: traceContext.spanId,
         trace_flags: traceContext.traceFlags
@@ -68,17 +67,13 @@ export const loader: LoaderFunction = async ({ request }) => {
     
     return json({ redirectTo });
   } catch (error) {
-    // Log the error with context - use the same trace context
+    // Log the error with context
     reqLogger.error({
       message: "An unexpected error occurred",
       error,
       route: "auth.login", 
       handler: "loader",
-      url: request.url,
-      // Preserve trace context
-      trace_id: traceContext.traceId,
-      span_id: traceContext.spanId,
-      trace_flags: traceContext.traceFlags
+      url: request.url
     });
     
     // Return minimal error to client
@@ -86,16 +81,17 @@ export const loader: LoaderFunction = async ({ request }) => {
   }
 };
 
-export const  action: ActionFunction = async ({ request }) => {
-  // Create operation-specific logger with unique request ID
+export const action: ActionFunction = async ({ request }) => {
+  // Generate a unique request ID
   const requestId = crypto.randomUUID();
-  const operationLogger = await createOperationLogger("auth.login.submit", requestId, {
+  
+  // Create operation-specific logger
+  const operationLogger = createOperationLogger("auth.login.submit", requestId, {
     route: "auth.login"
   });
-  const traceContext = getTraceContext(); // Get the current trace context
   
   // Start a timer for performance measurement
-  const startTime = metrics.startTimer("auth.login.duration");
+  const startTime = performance.now();
   
   try {
     operationLogger.info("Login form submitted");
@@ -118,19 +114,32 @@ export const  action: ActionFunction = async ({ request }) => {
         email: rawData.email
       });
       
-      metrics.counter("auth.login.validation_failure", 1, {
+      // Track validation failures
+      // Create metrics logger that inherits the trace context from operationLogger
+      const metrics = logger.child({
+        'telemetry.type': 'metric',
+        // Use the same trace context
+        trace_id: getTraceContext().traceId,
+        span_id: getTraceContext().spanId,
+        trace_flags: getTraceContext().traceFlags
+      });
+      
+      metrics.info({
+        'metric.name': "auth.login.validation_failure",
+        'metric.type': 'counter',
+        'metric.value': 1,
         email_error: !!errors.fieldErrors.email,
         password_error: !!errors.fieldErrors.password
       });
       
       // Create event logger with same trace context
-      const events = operationLogger.child({
+      const events = logger.child({
         'event.domain': 'auth',
         requestId,
-        // Preserve trace context
-        trace_id: traceContext.traceId,
-        span_id: operationLogger.context.span_id,
-        trace_flags: traceContext.traceFlags
+        // Use the same trace context
+        trace_id: getTraceContext().traceId,
+        span_id: getTraceContext().spanId,
+        trace_flags: getTraceContext().traceFlags
       });
       
       // Log event
@@ -142,17 +151,11 @@ export const  action: ActionFunction = async ({ request }) => {
       });
       
       // Log performance
-     /* const duration = performance.now() - startTime;
+      const duration = performance.now() - startTime;
       metrics.info({
         'metric.name': "auth.login.duration",
         'metric.type': 'histogram',
         'metric.value': duration,
-        'metric.unit': 'ms',
-        outcome: "validation_failure"
-      });*/
-
-      const duration = performance.now() - startTime.stop();
-      metrics.histogram("auth.login.duration", duration, {
         'metric.unit': 'ms',
         outcome: "validation_failure"
       });
@@ -178,20 +181,46 @@ export const  action: ActionFunction = async ({ request }) => {
         reason: error 
       });
       
-      // Track failed logins
-      metrics.counter("auth.login.failure", 1, {
+      // Track failed logins with consistent trace context
+      const metrics = logger.child({
+        'telemetry.type': 'metric',
+        trace_id: getTraceContext().traceId,
+        span_id: getTraceContext().spanId,
+        trace_flags: getTraceContext().traceFlags
+      });
+      
+      metrics.info({
+        'metric.name': "auth.login.failure",
+        'metric.type': 'counter',
+        'metric.value': 1,
         reason: error
       });
       
-      // Log event
-      authEvents.event("login.failed", {
+      // Log event with consistent trace context
+      const events = logger.child({
+        'event.domain': 'auth',
+        requestId,
+        trace_id: getTraceContext().traceId,
+        span_id: getTraceContext().spanId,
+        trace_flags: getTraceContext().traceFlags
+      });
+      
+      events.info({
+        'event.name': "login.failed",
         requestId,
         email,
         reason: error
       });
       
-      // Stop the timer
-      startTime.stop({ outcome: "auth_failure" });
+      // Stop the timer and log duration
+      const duration = performance.now() - startTime;
+      metrics.info({
+        'metric.name': "auth.login.duration",
+        'metric.type': 'histogram',
+        'metric.value': duration,
+        'metric.unit': 'ms',
+        outcome: "auth_failure"
+      });
       
       return json({ errors: { form: error || "Invalid email or password" } });
     }
@@ -206,18 +235,46 @@ export const  action: ActionFunction = async ({ request }) => {
     const session = await getSession();
     session.set("userId", userId);
     
-    // Track successful logins
-    metrics.counter("auth.login.success", 1);
+    // Track successful logins with consistent trace context
+    const metrics = logger.child({
+      'telemetry.type': 'metric',
+      trace_id: getTraceContext().traceId,
+      span_id: getTraceContext().spanId,
+      trace_flags: getTraceContext().traceFlags
+    });
     
-    // Log event
-    authEvents.event("login.success", {
+    metrics.info({
+      'metric.name': "auth.login.success",
+      'metric.type': 'counter',
+      'metric.value': 1
+    });
+    
+    // Log event with consistent trace context
+    const events = logger.child({
+      'event.domain': 'auth',
+      requestId,
+      trace_id: getTraceContext().traceId,
+      span_id: getTraceContext().spanId,
+      trace_flags: getTraceContext().traceFlags
+    });
+    
+    events.info({
+      'event.name': "login.success",
       requestId,
       userId,
       email
     });
     
-    // Stop the timer
-    const duration = startTime.stop({ outcome: "success" });
+    // Stop the timer and log duration
+    const duration = performance.now() - startTime;
+    metrics.info({
+      'metric.name': "auth.login.duration",
+      'metric.type': 'histogram',
+      'metric.value': duration,
+      'metric.unit': 'ms',
+      outcome: "success"
+    });
+    
     operationLogger.info(`Login processed in ${duration.toFixed(2)}ms`);
     
     return redirect(redirectTo || "/dashboard", {
@@ -227,23 +284,53 @@ export const  action: ActionFunction = async ({ request }) => {
     });
   } catch (error) {
     // Log the error with context
-    logError(error, { 
+    operationLogger.error({
+      message: "Operation failed",
+      error,
       operation: "auth.login.submit", 
       requestId
     });
     
     // Track unexpected errors
-    metrics.counter("auth.login.error", 1, {
+    const metrics = logger.child({
+      'telemetry.type': 'metric',
+      trace_id: getTraceContext().traceId,
+      span_id: getTraceContext().spanId,
+      trace_flags: getTraceContext().traceFlags
+    });
+    
+    metrics.info({
+      'metric.name': "auth.login.error",
+      'metric.type': 'counter',
+      'metric.value': 1,
       error_type: error instanceof Error ? error.name : "unknown"
     });
     
     // Log event
-    authEvents.failure("login", error, {
-      requestId
+    const events = logger.child({
+      'event.domain': 'auth',
+      requestId,
+      trace_id: getTraceContext().traceId,
+      span_id: getTraceContext().spanId,
+      trace_flags: getTraceContext().traceFlags
+    });
+    
+    events.info({
+      'event.name': "login.error",
+      requestId,
+      error_type: error instanceof Error ? error.name : "unknown",
+      error_message: error instanceof Error ? error.message : String(error)
     });
     
     // Stop the timer
-    startTime.stop({ outcome: "error" });
+    const duration = performance.now() - startTime;
+    metrics.info({
+      'metric.name': "auth.login.duration",
+      'metric.type': 'histogram',
+      'metric.value': duration,
+      'metric.unit': 'ms',
+      outcome: "error"
+    });
     
     // Return minimal error to client
     return json({ errors: { form: "An unexpected error occurred" } }, { status: 500 });

@@ -28,6 +28,16 @@ export type LogTarget = 'console' | 'file' | 'opentelemetry';
 // Define log formats
 export type LogFormat = 'json' | 'pretty';
 
+
+// Global trace context store to maintain consistency across logger instances
+const TRACE_CONTEXT_STORE = {
+  traceId: '',
+  spanId: '',
+  traceFlags: 1,
+  initialized: false
+};
+
+
 // Define RedactOptions interface
 interface RedactOptions {
   paths: string[];
@@ -94,6 +104,16 @@ export interface LogContext {
 
 // Utility to get W3C trace context from environment or parent spans
 export function getTraceContext(): { traceId?: string, spanId?: string, traceFlags?: number } {
+  
+  if (TRACE_CONTEXT_STORE.initialized && TRACE_CONTEXT_STORE.traceId) {
+    return {
+      traceId: TRACE_CONTEXT_STORE.traceId,
+      spanId: TRACE_CONTEXT_STORE.spanId,
+      traceFlags: TRACE_CONTEXT_STORE.traceFlags
+    };
+  }
+  
+  
   // Check if we have a parent trace context (from environment, headers, etc.)
   const traceparent = typeof process !== 'undefined' ? process.env.TRACEPARENT : undefined;
   
@@ -103,10 +123,16 @@ export function getTraceContext(): { traceId?: string, spanId?: string, traceFla
       // https://www.w3.org/TR/trace-context/#traceparent-header
       const parts = traceparent.split('-');
       if (parts.length === 4) {
+
+        TRACE_CONTEXT_STORE.traceId = parts[1];
+        TRACE_CONTEXT_STORE.spanId = parts[2];
+        TRACE_CONTEXT_STORE.traceFlags = parseInt(parts[3], 16);
+        TRACE_CONTEXT_STORE.initialized = true;
+
         return {
-          traceId: parts[1],
-          spanId: parts[2],
-          traceFlags: parseInt(parts[3], 16)
+          traceId: TRACE_CONTEXT_STORE.traceId,
+          spanId: TRACE_CONTEXT_STORE.spanId,
+          traceFlags: TRACE_CONTEXT_STORE.traceFlags
         };
       }
     } catch (e) {
@@ -116,7 +142,7 @@ export function getTraceContext(): { traceId?: string, spanId?: string, traceFla
   }
   
   // Generate a new trace context if none exists
-  if (isNodeEnvironment) {
+  /*if (isNodeEnvironment) {
     return {
       traceId: randomHex(32),
       spanId: randomHex(16),
@@ -124,7 +150,45 @@ export function getTraceContext(): { traceId?: string, spanId?: string, traceFla
     };
   }
   
-  return {};
+  return {};*/
+
+  if (!TRACE_CONTEXT_STORE.initialized) {
+    TRACE_CONTEXT_STORE.traceId = randomHex(32).toLowerCase();
+    TRACE_CONTEXT_STORE.spanId = randomHex(16).toLowerCase();
+    TRACE_CONTEXT_STORE.traceFlags = 1;
+    TRACE_CONTEXT_STORE.initialized = true;
+  }
+  
+  return {
+    traceId: TRACE_CONTEXT_STORE.traceId,
+    spanId: TRACE_CONTEXT_STORE.spanId,
+    traceFlags: TRACE_CONTEXT_STORE.traceFlags
+  };
+}
+
+// Add a function to set the trace context from outside
+export function setTraceContext(traceId?: string, spanId?: string, traceFlags?: number): void {
+  if (traceId) {
+    TRACE_CONTEXT_STORE.traceId = traceId;
+    TRACE_CONTEXT_STORE.initialized = true;
+  }
+  if (spanId) {
+    TRACE_CONTEXT_STORE.spanId = spanId;
+  }
+  if (traceFlags !== undefined) {
+    TRACE_CONTEXT_STORE.traceFlags = traceFlags;
+  }
+}
+
+// Create a function to generate a new span ID while keeping the same trace ID
+export function createNewSpan(): { spanId: string, parentSpanId: string } {
+  const currentSpanId = TRACE_CONTEXT_STORE.spanId;
+  const newSpanId = randomHex(16).toLowerCase();
+  TRACE_CONTEXT_STORE.spanId = newSpanId;
+  return {
+    spanId: newSpanId,
+    parentSpanId: currentSpanId
+  };
 }
 
 // Generate random hex string for trace/span IDs
@@ -613,7 +677,7 @@ function formatOtelLogRecord(level: string, data: any, attrs?: Record<string, an
 export { logger };
 
 // Export helper functions for creating loggers
-export function createContextLogger(context: LogContext = {}): LoggerInstance {
+/*export function createContextLogger(context: LogContext = {}): LoggerInstance {
   // Generate a new request ID if not provided
   if (!context.requestId && !context.request_id) {
     // Use Web Crypto API's randomUUID which works in both modern browsers and Node.js
@@ -641,6 +705,67 @@ export function createContextLogger(context: LogContext = {}): LoggerInstance {
   
   // Create child logger with context (synchronously)
   return logger.child(context);
+}*/
+
+export function createContextLogger(context: LogContext = {}): LoggerInstance {
+  // Extract existing trace context fields from the input context
+  const {
+    trace_id, span_id, parent_span_id, trace_flags,
+    traceId, spanId, parentSpanId, traceFlags,
+    trace_Id, span_Id, trace_Flags,
+    ...restContext
+  } = context;
+  
+  // Determine the effective trace context
+  let effectiveTraceId = trace_id || traceId || trace_Id;
+  let effectiveSpanId = span_id || spanId || span_Id;
+  let effectiveParentSpanId = parent_span_id || parentSpanId;
+  let effectiveTraceFlags = trace_flags || traceFlags || trace_Flags;
+  
+  // If trace context is provided in the input, use it to update the store
+  if (effectiveTraceId) {
+    // Convert to string to fix the type error
+    setTraceContext(
+      String(effectiveTraceId), 
+      effectiveSpanId ? String(effectiveSpanId) : undefined,
+      typeof effectiveTraceFlags === 'number' ? effectiveTraceFlags : undefined
+    );
+  }
+  
+  // Get the current trace context (from the store)
+  const traceContext = getTraceContext();
+  
+  // Generate a request ID if not provided
+  const requestId = context.requestId || context.request_id || crypto.randomUUID();
+  
+  // Create a new span if needed - using different variable names to avoid redeclaration
+  let finalSpanId = effectiveSpanId;
+  let finalParentSpanId = effectiveParentSpanId;
+  
+  if (!finalSpanId) {
+    const span = createNewSpan();
+    finalSpanId = span.spanId;
+    finalParentSpanId = span.parentSpanId;
+  }
+  
+  // Create the final context with standardized field names
+  const standardizedContext: LogContext = {
+    ...restContext,
+    requestId,
+    request_id: requestId,
+    // Use standardized OpenTelemetry field names (snake_case)
+    trace_id: traceContext.traceId,
+    span_id: finalSpanId,
+    trace_flags: traceContext.traceFlags
+  };
+  
+  // Add parent span ID if available
+  if (finalParentSpanId) {
+    standardizedContext.parent_span_id = finalParentSpanId;
+  }
+  
+  // Create child logger with standardized context
+  return logger.child(standardizedContext);
 }
 
 // Component logger that follows OpenTelemetry conventions
@@ -999,14 +1124,14 @@ export function createSpanContext(name: string, attributes: Record<string, any> 
   // Get existing trace context
   const currentContext = getTraceContext();
   
-  // Generate a new span ID
-  const spanId = randomHex(16);
+  // Create a new span ID while maintaining the same trace ID
+  const { spanId, parentSpanId } = createNewSpan();
   
   // Return span context
   return {
-    trace_id: currentContext.traceId || randomHex(32),
+    trace_id: currentContext.traceId || randomHex(32).toLowerCase(),
     span_id: spanId,
-    parent_span_id: currentContext.spanId,
+    parent_span_id: parentSpanId,
     trace_flags: currentContext.traceFlags || 1,
     attributes: {
       'span.name': name,
