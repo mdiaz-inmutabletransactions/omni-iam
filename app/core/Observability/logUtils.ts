@@ -9,7 +9,8 @@ import {
   OtelLogRecord,
   createSpanContext,
   getTraceparentHeader,
-  toOtelLogRecord
+  toOtelLogRecord,
+  getTraceContext
 } from './logs';
 
 // Format options interface for better type checking
@@ -421,3 +422,5 @@ export { toOtelLogRecord };
  * Creates span context for distributed tracing
  */
 export { createSpanContext };
+
+export { getTraceContext}

@@ -93,7 +93,7 @@ export interface LogContext {
 }
 
 // Utility to get W3C trace context from environment or parent spans
-function getTraceContext(): { traceId?: string, spanId?: string, traceFlags?: number } {
+export function getTraceContext(): { traceId?: string, spanId?: string, traceFlags?: number } {
   // Check if we have a parent trace context (from environment, headers, etc.)
   const traceparent = typeof process !== 'undefined' ? process.env.TRACEPARENT : undefined;
   

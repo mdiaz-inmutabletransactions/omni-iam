@@ -11,13 +11,14 @@ import {
   createRequestLogger, 
   createEventLogger,
   createMetricLogger,
-  logError
+  logError,
+  getTraceContext,
 } from "~/core/Observability";
 
 // Create component logger for this route
 const logger = createComponentLogger("AuthLoginRoute");
-const authEvents = createEventLogger("auth");
-const metrics = createMetricLogger();
+const authEvents = await createEventLogger("auth");
+const metrics = await createMetricLogger();
 
 // Create zod schema for login validation
 const loginSchema = z.object({
@@ -28,7 +29,7 @@ const loginSchema = z.object({
 
 export const loader: LoaderFunction = async ({ request }) => {
   // Create request-specific logger
-  const reqLogger = createRequestLogger(request, { route: "auth.login" });
+  const reqLogger = await createRequestLogger(request, { route: "auth.login" });
   
   reqLogger.info("Login page visited");
   
@@ -66,10 +67,10 @@ export const loader: LoaderFunction = async ({ request }) => {
   }
 };
 
-export const action: ActionFunction = async ({ request }) => {
+export const  action: ActionFunction = async ({ request }) => {
   // Create operation-specific logger with unique request ID
   const requestId = crypto.randomUUID();
-  const operationLogger = createOperationLogger("auth.login.submit", requestId, {
+  const operationLogger = await createOperationLogger("auth.login.submit", requestId, {
     route: "auth.login"
   });
   
@@ -218,7 +219,10 @@ async function authenticateUser(email: string, password: string) {
 // Mock session functions (replace with your actual implementation)
 async function getSession(cookie?: string | null) {
   // This would use your actual session implementation
-  return { get: (key: string) => null };
+  return { 
+    get: (key: string) => null,
+    set: (key: string, value: any) => {} // Add this method
+  };
 }
 
 async function commitSession(session: any) {

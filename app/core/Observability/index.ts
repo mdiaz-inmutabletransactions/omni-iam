@@ -5,12 +5,27 @@ import { ViteEnv } from '../ViteEnv';
 import { logger, createContextLogger, logManager } from './logs';
 import type { LogContext, LoggerInstance, LogLevel, LogTarget, LogFormat, LogSchema } from './logs';
 import { 
-  formatObject, 
-  createComponentLogger, 
-  createOperationLogger, 
+    
+  // Existing functions
+  createComponentLogger,
+  createOperationLogger,
   createRequestLogger,
+  
+  // Add these missing exports
+  createEventLogger,
+  createMetricLogger,
+  logError,
+  
+  // Utility functions
+  formatObject,
   redactSensitiveInfo,
-  safeStringify
+  safeStringify,
+  
+  // OpenTelemetry
+  getTraceparentHeader,
+  toOtelLogRecord,
+  createSpanContext,
+  getTraceContext
 } from './logUtils';
 import type { FormatObjectOptions } from './logUtils';
 import { initializeOpenTelemetry } from './opentelemetry';
@@ -61,21 +76,33 @@ console.info({
 
 // Export everything from the observability module
 export {
-  // Core logger
+
+  // core
   logger,
   logManager,
   createContextLogger,
   
-  // Utility functions
-  formatObject,
+  // Existing functions
   createComponentLogger,
   createOperationLogger,
   createRequestLogger,
+  
+  // Add these missing exports
+  createEventLogger,
+  createMetricLogger,
+  logError,
+  
+  // Utility functions
+  formatObject,
   redactSensitiveInfo,
   safeStringify,
   
   // OpenTelemetry
   initializeOpenTelemetry,
+  getTraceparentHeader,
+  toOtelLogRecord,
+  createSpanContext,
+  getTraceContext,
 };
 
 // Export types properly with export type
