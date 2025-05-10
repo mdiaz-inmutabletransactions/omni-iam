@@ -12,7 +12,7 @@ import {
   toOtelLogRecord,
   getTraceContext,
   setTraceContext,
-  createNewSpan
+  createNewSpan,
 } from './logs';
 
 // Format options interface for better type checking
@@ -139,10 +139,10 @@ export function createOperationLogger(
     'event.name': operationName,
     'code.function': operationName,
     // Use the trace context from spanContext
-    trace_id: spanContext.trace_id,
-    span_id: spanContext.span_id,
-    parent_span_id: spanContext.parent_span_id,
-    trace_flags: spanContext.trace_flags,
+    trace_id: spanContext.trace_id1,
+    span_id: spanContext.span_id1,
+    parent_span_id: spanContext.parent_span_id1,
+    trace_flags: spanContext.trace_flags1,
     ...additionalContext
   };
   
@@ -476,3 +476,5 @@ export { getTraceContext}
 export { setTraceContext }
 
 export { createNewSpan }
+
+

@@ -13,7 +13,7 @@ import {
   getBoolEnv,
   getNumEnv, 
   logDefaults,
-  safeLog
+  safeLog,
 } from '../config/enviroment';
 
 // For OpenTelemetry trace context propagation
@@ -27,6 +27,228 @@ export type LogTarget = 'console' | 'file' | 'opentelemetry';
 
 // Define log formats
 export type LogFormat = 'json' | 'pretty';
+
+/**
+ * Complete mapping of OpenTelemetry severity levels
+ * Based on OpenTelemetry specification with all 24 levels
+ */
+
+// Type definitions
+export type OtelSeverityText = 
+  | 'TRACE' | 'TRACE2' | 'TRACE3' | 'TRACE4'
+  | 'DEBUG' | 'DEBUG2' | 'DEBUG3' | 'DEBUG4'
+  | 'INFO' | 'INFO2' | 'INFO3' | 'INFO4'
+  | 'WARN' | 'WARN2' | 'WARN3' | 'WARN4'
+  | 'ERROR' | 'ERROR2' | 'ERROR3' | 'ERROR4'
+  | 'FATAL' | 'FATAL2' | 'FATAL3' | 'FATAL4';
+
+  export type OtelSeverityNumber = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23 | 24;
+
+// Complete severity mapping tables
+const SEVERITY_TEXT_TO_NUMBER: Record<string, number> = {
+  'TRACE': 1,   'TRACE2': 2,  'TRACE3': 3,  'TRACE4': 4,
+  'DEBUG': 5,   'DEBUG2': 6,  'DEBUG3': 7,  'DEBUG4': 8,
+  'INFO': 9,    'INFO2': 10,  'INFO3': 11,  'INFO4': 12,
+  'WARN': 13,   'WARN2': 14,  'WARN3': 15,  'WARN4': 16,
+  'ERROR': 17,  'ERROR2': 18, 'ERROR3': 19, 'ERROR4': 20,
+  'FATAL': 21,  'FATAL2': 22, 'FATAL3': 23, 'FATAL4': 24
+};
+
+const SEVERITY_NUMBER_TO_TEXT: Record<number, string> = {
+  1: 'TRACE',   2: 'TRACE2',  3: 'TRACE3',  4: 'TRACE4',
+  5: 'DEBUG',   6: 'DEBUG2',  7: 'DEBUG3',  8: 'DEBUG4',
+  9: 'INFO',    10: 'INFO2',  11: 'INFO3',  12: 'INFO4',
+  13: 'WARN',   14: 'WARN2',  15: 'WARN3',  16: 'WARN4',
+  17: 'ERROR',  18: 'ERROR2', 19: 'ERROR3', 20: 'ERROR4',
+  21: 'FATAL',  22: 'FATAL2', 23: 'FATAL3', 24: 'FATAL4'
+};
+
+/**
+ * Maps OpenTelemetry severity text to severity number (all 24 levels)
+ * 
+ * @param severityText - The severity level as text (e.g., 'ERROR', 'WARN2', 'INFO3')
+ * @returns The corresponding severity number according to OpenTelemetry specification
+ */
+export function severityTextToNumber(severityText: string): number {
+  const textUpper = severityText.toUpperCase();
+  const severityNumber = SEVERITY_TEXT_TO_NUMBER[textUpper];
+  
+  if (severityNumber !== undefined) {
+    return severityNumber;
+  }
+  
+  // If exact match not found, try to parse variants
+  // Handle cases like 'trace_2', 'debug-3', etc.
+  const match = textUpper.match(/^(TRACE|DEBUG|INFO|WARN|ERROR|FATAL)[\s_-]?(\d)?$/);
+  if (match) {
+    const [, level, number] = match;
+    const sublevel = number ? parseInt(number, 10) : 1;
+    if (sublevel >= 1 && sublevel <= 4) {
+      const key = sublevel === 1 ? level : `${level}${sublevel}`;
+      return SEVERITY_TEXT_TO_NUMBER[key] || 9; // Default to INFO
+    }
+  }
+  
+  // Default to INFO level
+  return 9;
+}
+
+/**
+ * Maps OpenTelemetry severity number to severity text (all 24 levels)
+ * 
+ * @param severityNumber - The severity level as number (1-24)
+ * @returns The corresponding severity text according to OpenTelemetry specification
+ */
+export function severityNumberToText(severityNumber: number): string {
+  const severityText = SEVERITY_NUMBER_TO_TEXT[severityNumber];
+  
+  if (severityText !== undefined) {
+    return severityText;
+  }
+  
+  // If number is outside 1-24 range, return INFO as default
+  return 'INFO';
+}
+
+/**
+ * Gets both severity text and number from either input type
+ * 
+ * @param severity - Either severity text or number
+ * @returns An object containing both severity text and number
+ */
+export function getSeverityInfo(severity: string | number): {
+  severityText: string;
+  severityNumber: number;
+} {
+  if (typeof severity === 'string') {
+    const severityNumber = severityTextToNumber(severity);
+    return {
+      severityText: severityNumberToText(severityNumber),
+      severityNumber
+    };
+  } else {
+    const severityText = severityNumberToText(severity);
+    return {
+      severityText,
+      severityNumber: severity
+    };
+  }
+}
+
+/**
+ * Validates if a severity number is within the valid OpenTelemetry range (1-24)
+ * 
+ * @param severityNumber - The severity number to validate
+ * @returns boolean indicating if the severity number is valid
+ */
+export function isValidSeverityNumber(severityNumber: number): boolean {
+  return severityNumber >= 1 && severityNumber <= 24;
+}
+
+/**
+ * Validates if a severity text is a valid OpenTelemetry severity level
+ * 
+ * @param severityText - The severity text to validate
+ * @returns boolean indicating if the severity text is valid
+ */
+export function isValidSeverityText(severityText: string): boolean {
+  return SEVERITY_TEXT_TO_NUMBER[severityText.toUpperCase()] !== undefined;
+}
+
+/**
+ * Gets the base severity level (without sub-level) from any severity text
+ * 
+ * @param severityText - The severity level as text (e.g., 'ERROR3' -> 'ERROR')
+ * @returns The base severity level
+ */
+export function getBaseSeverityLevel(severityText: string): string {
+  const textUpper = severityText.toUpperCase();
+  const match = textUpper.match(/^(TRACE|DEBUG|INFO|WARN|ERROR|FATAL)/);
+  return match ? match[1] : 'INFO';
+}
+
+/**
+ * Gets the severity sub-level from severity text
+ * 
+ * @param severityText - The severity level as text (e.g., 'ERROR3' -> 3)
+ * @returns The sub-level number (1-4), or 1 if no sub-level specified
+ */
+export function getSeveritySubLevel(severityText: string): number {
+  const textUpper = severityText.toUpperCase();
+  const match = textUpper.match(/^(?:TRACE|DEBUG|INFO|WARN|ERROR|FATAL)(\d)?$/);
+  
+  if (match && match[1]) {
+    const sublevel = parseInt(match[1], 10);
+    return sublevel >= 1 && sublevel <= 4 ? sublevel : 1;
+  }
+  
+  return 1;
+}
+
+/**
+ * Constructs severity text from base level and sub-level
+ * 
+ * @param baseLevel - The base severity level (e.g., 'ERROR')
+ * @param subLevel - The sub-level (1-4)
+ * @returns The constructed severity text (e.g., 'ERROR3')
+ */
+export function constructSeverityText(baseLevel: string, subLevel: number = 1): string {
+  const validBaseLevels = ['TRACE', 'DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL'];
+  const normalizedBase = baseLevel.toUpperCase();
+  
+  if (!validBaseLevels.includes(normalizedBase)) {
+    throw new Error(`Invalid base level: ${baseLevel}`);
+  }
+  
+  if (subLevel < 1 || subLevel > 4) {
+    throw new Error(`Invalid sub-level: ${subLevel}. Must be between 1 and 4.`);
+  }
+  
+  return subLevel === 1 ? normalizedBase : `${normalizedBase}${subLevel}`;
+}
+
+/**
+ * Gets all valid severity texts
+ * 
+ * @returns Array of all valid severity text values
+ */
+export function getAllSeverityTexts(): string[] {
+  return Object.keys(SEVERITY_TEXT_TO_NUMBER);
+}
+
+/**
+ * Gets all valid severity numbers
+ * 
+ * @returns Array of all valid severity number values
+ */
+export function getAllSeverityNumbers(): number[] {
+  return Object.keys(SEVERITY_NUMBER_TO_TEXT).map(Number);
+}
+
+/**
+ * Converts a severity level to a consistent format
+ * This is useful for normalizing various input formats to standard OpenTelemetry format
+ * 
+ * @param input - Any severity representation (string or number)
+ * @returns Normalized severity information
+ */
+export function normalizeSeverity(input: string | number): {
+  text: string;
+  number: number;
+  baseLevel: string;
+  subLevel: number;
+} {
+  const { severityText, severityNumber } = getSeverityInfo(input);
+  const baseLevel = getBaseSeverityLevel(severityText);
+  const subLevel = getSeveritySubLevel(severityText);
+  
+  return {
+    text: severityText,
+    number: severityNumber,
+    baseLevel,
+    subLevel
+  };
+}
 
 
 // Global trace context store to maintain consistency across logger instances
@@ -47,23 +269,19 @@ interface RedactOptions {
 
 // OpenTelemetry Log and Event Record definition
 // https://opentelemetry.io/docs/specs/otel/logs/data-model/#log-and-event-record-definition
-export interface OtelLogRecord {
+export interface  OtelLogRecord  {
   // Timestamp (ISO8601-compatible string in nanoseconds)
-  time?: string;
-  // Observed timestamp
-  observed_time?: string;
-  // Trace context
-  trace_id?: string;
-  span_id?: string;
-  trace_flags?: number;
-  // Severity
-  severity_number?: number;
-  severity_text?: string;
-  // Content fields
-  body?: string | Record<string, any>;
-  attributes?: Record<string, any>;
-  // Resource information
-  resource?: Record<string, any>;
+  Timestamp: string;
+  ObservedTime?: string;
+  TraceId: string;
+  SpanId: string;
+  TraceFlags: number;
+  SeverityText?: string;
+  SeverityNumber: number;
+  Body?: string | Record<string, any>;
+  Resource: Record<string, any>;
+  Attributes?: Record<string, any>;
+  InstrumentationScope?: string | Record<string, any>;
   // Legacy fields for backward compatibility
   [key: string]: any;
 }
@@ -103,23 +321,22 @@ export interface LogContext {
 }
 
 // Utility to get W3C trace context from environment or parent spans
-export function getTraceContext(): { traceId?: string, spanId?: string, traceFlags?: number } {
+export function getTraceContext(): { TraceId?: string, SpanId?: string, TraceFlags?: number } {
   
   if (TRACE_CONTEXT_STORE.initialized && TRACE_CONTEXT_STORE.traceId) {
     return {
-      traceId: TRACE_CONTEXT_STORE.traceId,
-      spanId: TRACE_CONTEXT_STORE.spanId,
-      traceFlags: TRACE_CONTEXT_STORE.traceFlags
+      TraceId: TRACE_CONTEXT_STORE.traceId,
+      SpanId: TRACE_CONTEXT_STORE.spanId,
+      TraceFlags: TRACE_CONTEXT_STORE.traceFlags
     };
   }
-  
   
   // Check if we have a parent trace context (from environment, headers, etc.)
   const traceparent = typeof process !== 'undefined' ? process.env.TRACEPARENT : undefined;
   
   if (traceparent) {
     try {
-      // Parse W3C trace context format: 00-traceId-spanId-flags
+      // Parse W3C trace context format: 00-traceId-spanId-traceFlags
       // https://www.w3.org/TR/trace-context/#traceparent-header
       const parts = traceparent.split('-');
       if (parts.length === 4) {
@@ -130,9 +347,9 @@ export function getTraceContext(): { traceId?: string, spanId?: string, traceFla
         TRACE_CONTEXT_STORE.initialized = true;
 
         return {
-          traceId: TRACE_CONTEXT_STORE.traceId,
-          spanId: TRACE_CONTEXT_STORE.spanId,
-          traceFlags: TRACE_CONTEXT_STORE.traceFlags
+          TraceId: TRACE_CONTEXT_STORE.traceId,
+          SpanId: TRACE_CONTEXT_STORE.spanId,
+          TraceFlags: TRACE_CONTEXT_STORE.traceFlags
         };
       }
     } catch (e) {
@@ -141,16 +358,6 @@ export function getTraceContext(): { traceId?: string, spanId?: string, traceFla
     }
   }
   
-  // Generate a new trace context if none exists
-  /*if (isNodeEnvironment) {
-    return {
-      traceId: randomHex(32),
-      spanId: randomHex(16),
-      traceFlags: 1 // Sampled
-    };
-  }
-  
-  return {};*/
 
   if (!TRACE_CONTEXT_STORE.initialized) {
     TRACE_CONTEXT_STORE.traceId = randomHex(32).toLowerCase();
@@ -160,9 +367,9 @@ export function getTraceContext(): { traceId?: string, spanId?: string, traceFla
   }
   
   return {
-    traceId: TRACE_CONTEXT_STORE.traceId,
-    spanId: TRACE_CONTEXT_STORE.spanId,
-    traceFlags: TRACE_CONTEXT_STORE.traceFlags
+    TraceId: TRACE_CONTEXT_STORE.traceId,
+    SpanId: TRACE_CONTEXT_STORE.spanId,
+    TraceFlags: TRACE_CONTEXT_STORE.traceFlags
   };
 }
 
@@ -181,13 +388,13 @@ export function setTraceContext(traceId?: string, spanId?: string, traceFlags?: 
 }
 
 // Create a function to generate a new span ID while keeping the same trace ID
-export function createNewSpan(): { spanId: string, parentSpanId: string } {
+export function createNewSpan(): { SpanId: string, ParentSpanId: string } {
   const currentSpanId = TRACE_CONTEXT_STORE.spanId;
   const newSpanId = randomHex(16).toLowerCase();
   TRACE_CONTEXT_STORE.spanId = newSpanId;
   return {
-    spanId: newSpanId,
-    parentSpanId: currentSpanId
+    SpanId: newSpanId,
+    ParentSpanId: currentSpanId
   };
 }
 
@@ -260,6 +467,7 @@ function getResourceInfo(): Record<string, any> {
 
 // Map severity text to OTel severity number
 // https://opentelemetry.io/docs/specs/otel/logs/data-model/#field-severitynumber
+// TODO: Duplicated with  severityText ...
 function getSeverityNumber(level: string): number {
   switch (level.toLowerCase()) {
     case 'trace': return 1;
@@ -278,71 +486,105 @@ function createConsoleLogger(): LoggerInstance {
   const baseContext: LogContext = {};
   
   function logWithContext(level: string, data: any, additionalAttrs?: Record<string, any>): void {
-    const timestamp = DateTime.now().toISO();
+    //TODO: corregir fecha si null or undefined en todo el proyecto o refactorizar
+    const timestamp = DateTime.now().setZone(logTimeZone).toISO() || DateTime.now().toLocal().toString();
     const traceContext = getTraceContext();
     const severityNumber = getSeverityNumber(level);
-    
+
     // Create OpenTelemetry-compatible log record
-    let logRecord: OtelLogRecord;
+    let logRecord: OtelLogRecord = {
+      Timestamp: timestamp,
+      TraceId: traceContext.TraceId || randomHex(32).toLowerCase(), //TODO: || add this?  "00000000000000000000000000000000" ??? https://www.w3.org/TR/trace-context/#trace-id
+      SpanId: traceContext.SpanId || randomHex(16).toLowerCase(), //TODO: || "0000000000000000" ???
+      TraceFlags: traceContext.TraceFlags || 1,
+      SeverityNumber: severityNumber,
+      SeverityText: level,
+      Body: data,
+      Attributes: { ...baseContext, ...additionalAttrs },
+      Resource:resource,
+      //...traceContext
+    };
     
     if (typeof data === 'string') {
       // Convert string message to log record
       logRecord = {
-        time: timestamp,
-        severity_number: severityNumber,
-        severity_text: level,
-        body: data,
-        attributes: { ...baseContext, ...additionalAttrs },
-        resource,
-        ...traceContext
+        Timestamp: timestamp,
+        TraceId: traceContext.TraceId || randomHex(32).toLowerCase(),
+        SpanId: traceContext.SpanId || randomHex(16).toLowerCase(),
+        TraceFlags: traceContext.TraceFlags || 1,
+        SeverityNumber: severityNumber,
+        SeverityText: level,
+        Body: data,
+        Attributes: { ...baseContext, ...additionalAttrs },
+        Resource:resource,
+        //...traceContext
       };
     } else if (data && typeof data === 'object') {
       // Check if it's already a log record
-      if ('body' in data || 'severity_number' in data) {
+      if ('Body' in data || 'SeverityNumber' in data) {
         // It's already a log record, just supplement it
         logRecord = {
-          ...data,
-          time: data.time || timestamp,
-          severity_number: data.severity_number || severityNumber,
-          severity_text: data.severity_text || level,
-          attributes: { ...baseContext, ...(data.attributes || {}), ...(additionalAttrs || {}) },
-          resource: { ...resource, ...(data.resource || {}) },
-          ...traceContext
+          Timestamp: data.Timestamp || timestamp,
+          TraceId: data.TraceID || traceContext.TraceId || randomHex(32).toLowerCase(),
+          SpanId: data.SpanID || traceContext.SpanId || randomHex(16).toLowerCase(),
+          TraceFlags: data.TraceFlags || traceContext.TraceFlags || 1,
+          SeverityNumber: data.SeverityNumber || severityNumber,
+          SeverityText: data.SeverityText || level,
+          Attributes: { ...baseContext, ...(data.Attributes || {}), ...(additionalAttrs || {}) },
+          Resource: { ...resource, ...(data.resource || {}) },
+          ...data //TODO: Clean contex from data for avoid creating duplicated context i.e. function ridContexFromData( ...)
+          //...traceContext
         };
       } else {
         // It's just a data object, use it as the body
         logRecord = {
-          time: timestamp,
-          severity_number: severityNumber,
-          severity_text: level,
-          body: data,
-          attributes: { ...baseContext, ...additionalAttrs },
-          resource,
-          ...traceContext
+          Timestamp: timestamp,
+          TraceId: traceContext.TraceId || randomHex(32).toLowerCase(),
+          SpanId: traceContext.SpanId || randomHex(16).toLowerCase(),
+          TraceFlags: traceContext.TraceFlags || 1,
+          SeverityNumber: severityNumber,
+          SeverityText: level,
+          Body: data,
+          Attributes: { ...baseContext, ...additionalAttrs },
+          Resource:resource,
+          //...traceContext
         };
       }
     } else {
       // Fallback for other data types
       logRecord = {
-        time: timestamp,
-        severity_number: severityNumber,
-        severity_text: level,
-        body: String(data),
-        attributes: { ...baseContext, ...additionalAttrs },
-        resource,
-        ...traceContext
+
+        Timestamp: timestamp,
+        TraceId: traceContext.TraceId || randomHex(32).toLowerCase(),
+        SpanId: traceContext.SpanId || randomHex(16).toLowerCase(),
+        TraceFlags: traceContext.TraceFlags || 1,
+        SeverityNumber: severityNumber,
+        SeverityText: level,
+        Body: String(data),
+        Attributes: { ...baseContext, ...additionalAttrs },
+        Resource:resource,
+        //...traceContext
       };
     }
     
+    // Gets both text and number from level information based on Otel Levels
+    // https://opentelemetry.io/docs/specs/otel/logs/data-model/#displaying-severity
+    // TODO: refactor to higer level like trace context
+    const severityInfo = getSeverityInfo(level);
+
     // For console output, try to make it readable
     const consoleOutput = {
-      level,
-      time: logRecord.time,
-      trace_id: logRecord.trace_id,
-      ...(typeof logRecord.body === 'string' 
-        ? { message: logRecord.body } 
-        : { ...logRecord.body }),
-      ...(Object.keys(logRecord.attributes || {}).length > 0 ? { attributes: logRecord.attributes } : {})
+        Timestamp: timestamp,
+        TraceId: traceContext.TraceId || randomHex(32).toLowerCase(),
+        SpanId: traceContext.SpanId || randomHex(16).toLowerCase(),
+        TraceFlags: traceContext.TraceFlags || 1,
+        SeverityNumber: severityInfo.severityNumber,
+        SeverityText: severityInfo.severityText,
+      ...(typeof logRecord.Body === 'string' 
+        ? { Body: logRecord.Body } 
+        : { ...(Object.keys(logRecord.Body || {}).length > 0 ? { Body: logRecord.Body } : {}) }),
+      ...(Object.keys(logRecord.Attributes || {}).length > 0 ? { Attributes: logRecord.Attributes } : {}),
+      ...(Object.keys(logRecord.Resource || {}).length > 0 ? { Resource: logRecord.Resource } : {})
     };
     
     // Log to console
@@ -365,8 +607,6 @@ function createConsoleLogger(): LoggerInstance {
     warn: (data, attrs) => { logWithContext('warn', data, attrs); return true; },
     error: (data, attrs) => { logWithContext('error', data, attrs); return true; },
     fatal: (data, attrs) => { logWithContext('fatal', data, attrs); return true; },
-    
-    // Event logging (special case of info logs with event name)
     event: (name, data = {}) => { 
       logWithContext('info', { 
         ...data,
@@ -375,8 +615,6 @@ function createConsoleLogger(): LoggerInstance {
       });
       return true;
     },
-    
-    // Metric logging
     metric: (name, value, attributes = {}) => {
       logWithContext('info', {
         'metric.name': name,
@@ -438,9 +676,7 @@ if (isNodeEnvironment && logTargets.includes('file')) {
 
     // Override methods to log to both
     logger.trace = (data: any, attrs?: Record<string, any>) => {
-      // Format OpenTelemetry compatible log record 
       Logger.trace(formatOtelLogRecord('trace', data, attrs));
-      // Call original to maintain console logging during transition
       originalTrace(data, attrs);
       return true;
     };
@@ -592,31 +828,37 @@ logger.child = (context: LogContext) => {
 
 // Format data as OpenTelemetry log record
 function formatOtelLogRecord(level: string, data: any, attrs?: Record<string, any>): OtelLogRecord {
-  const timestamp = DateTime.now().toISO();
+  const timestamp = DateTime.now().setZone(logTimeZone).toISO() || DateTime.now().toLocal().toString();;
   const traceContext = getTraceContext();
   const resource = getResourceInfo();
   const severityNumber = getSeverityNumber(level);
   
   // Create the base log record
   const baseRecord: OtelLogRecord = {
-    time: timestamp,
-    severity_number: severityNumber,
-    severity_text: level,
-    resource,
-    ...traceContext
+
+    Timestamp: timestamp,
+    TraceId: traceContext.TraceId || randomHex(32).toLowerCase(),
+    SpanId: traceContext.SpanId || randomHex(16).toLowerCase(),
+    TraceFlags: traceContext.TraceFlags || 1,
+    SeverityNumber: severityNumber,
+    SeverityText: level,
+    Body: data,
+    Attributes: { ...attrs },
+    Resource:resource,
+    //...traceContext
   };
   
   // Handle different data types
   if (typeof data === 'string') {
     return {
       ...baseRecord,
-      body: data,
-      attributes: attrs || {}
+      Body: data,
+      Attributes: attrs || {}
     };
   } else if (data && typeof data === 'object') {
     // Check if it's already a log record
     if ('body' in data || 'severity_number' in data) {
-      return {
+      return { //TODO: corregit estoYAAAAAAAA!
         ...baseRecord,
         ...data,
         attributes: { ...(data.attributes || {}), ...(attrs || {}) }
@@ -624,51 +866,53 @@ function formatOtelLogRecord(level: string, data: any, attrs?: Record<string, an
     } else {
       // Extract OTel-specific fields
       const { 
-        trace_id, span_id, trace_flags, 
+      // TODO: ojo aqui hay trace_id commentado
+       //trace_id, span_id, trace_flags, 
         severity_number: dataSeverity, severity_text: dataLevel,
         ...rest 
       } = data;
       
       // Add trace context from data if provided
-      if (trace_id) baseRecord.trace_id = trace_id;
-      if (span_id) baseRecord.span_id = span_id;
-      if (trace_flags) baseRecord.trace_flags = trace_flags;
+      // TODO: ojo aqui hay trace_id commentado
+      //if (trace_id) baseRecord.TraceId = trace_id;
+      //if (span_id) baseRecord.SpanId = span_id;
+      //if (trace_flags) baseRecord.TraceFlags = trace_flags;
       
       // Add severity info from data if provided
-      if (dataSeverity) baseRecord.severity_number = dataSeverity;
-      if (dataLevel) baseRecord.severity_text = dataLevel;
+      if (dataSeverity) baseRecord.SeverityNumber = dataSeverity;
+      if (dataLevel) baseRecord.SeverityText = dataLevel;
       
       // Handle message field for backward compatibility
       if ('message' in rest && !('body' in rest)) {
-        return {
+        return {//TODO: corregit estoYAAAAAAAA!
           ...baseRecord,
-          body: rest.message,
-          attributes: { ...(rest as any), ...(attrs || {}) }
+          Body: rest.message,
+          Attributes: { ...(rest as any), ...(attrs || {}) }
         };
       }
       
       // Handle body field
       if ('body' in rest) {
-        return {
+        return {//TODO: corregit estoYAAAAAAAA!
           ...baseRecord,
-          body: rest.body,
-          attributes: { ...(rest as any), ...(attrs || {}) }
+          Body: rest.body,
+          Attributes: { ...(rest as any), ...(attrs || {}) }
         };
       }
       
       // Default: use entire object as body
       return {
         ...baseRecord,
-        body: rest,
-        attributes: attrs || {}
+        Body: rest,
+        Attributes: attrs || {}
       };
     }
   } else {
     // For primitive values
     return {
       ...baseRecord,
-      body: String(data),
-      attributes: attrs || {}
+      Body: String(data),
+      Attributes: attrs || {}
     };
   }
 }
@@ -744,19 +988,21 @@ export function createContextLogger(context: LogContext = {}): LoggerInstance {
   
   if (!finalSpanId) {
     const span = createNewSpan();
-    finalSpanId = span.spanId;
-    finalParentSpanId = span.parentSpanId;
+    finalSpanId = span.SpanId;
+    finalParentSpanId = span.ParentSpanId;
   }
   
   // Create the final context with standardized field names
+  //TODO: corregit estoYAAAAAAAA!
+  // TODO: parece que aqui est el span_id (contecto) que esta de mas
   const standardizedContext: LogContext = {
     ...restContext,
     requestId,
     request_id: requestId,
     // Use standardized OpenTelemetry field names (snake_case)
-    trace_id: traceContext.traceId,
-    span_id: finalSpanId,
-    trace_flags: traceContext.traceFlags
+    //trace_id: traceContext.TraceId,
+    //span_id: finalSpanId,
+    //trace_flags: traceContext.TraceFlags
   };
   
   // Add parent span ID if available
@@ -1003,7 +1249,7 @@ export function createPinoConfig(
 ): LoggerOptions<never, boolean> {
   // Map log targets to transport targets
   const targets: TransportTargetOptions[] = [];
-  const time = DateTime.now().setZone(logTimeZone).toISO();
+  const Timestamp = DateTime.now().setZone(logTimeZone).toISO();
 
   // Process each log target
   logTargets.forEach(target => {
@@ -1054,12 +1300,12 @@ export function createPinoConfig(
   });
 
   // Return the config with transport object
-  return {
+  return {//TODO: corregit estoYAAAAAAAA!
     level: logLevel,
     depthLimit: 5,
     edgeLimit: 100,
     customLevels: 'trace:10,debug:20,info:30,warn:40,error:50,fatal:60',
-    timestamp: () => `,"time":"${time}"`,
+    timestamp: () => `,"time":"${Timestamp}"`,
     transport: {
       targets,
     },
@@ -1070,11 +1316,11 @@ export function createPinoConfig(
         if (inputArgs.length && typeof inputArgs[0] === 'object') {
           const traceContext = getTraceContext();
           // Add trace context if not present
-          if (traceContext.traceId && !inputArgs[0].trace_id) {
-            inputArgs[0].trace_id = traceContext.traceId;
+          if (traceContext.TraceId && !inputArgs[0].trace_Id) {
+            inputArgs[0].trace_id = traceContext.TraceId;
           }
-          if (traceContext.spanId && !inputArgs[0].span_id) {
-            inputArgs[0].span_id = traceContext.spanId;
+          if (traceContext.SpanId && !inputArgs[0].span_id) {
+            inputArgs[0].span_id = traceContext.SpanId;
           }
         }
         return method.apply(this, inputArgs);
@@ -1115,25 +1361,25 @@ export function safeLogFilePath(basePath: string, filename: string): string {
  * @returns {Object} Span context information
  */
 export function createSpanContext(name: string, attributes: Record<string, any> = {}): { 
-  trace_id: string;
-  span_id: string;
-  parent_span_id?: string;
-  trace_flags: number;
+  trace_id1?: string;
+  span_id1?: string;
+  parent_span_id1?: string;
+  trace_flags1?: number;
   attributes: Record<string, any>;
 } {
   // Get existing trace context
   const currentContext = getTraceContext();
   
   // Create a new span ID while maintaining the same trace ID
-  const { spanId, parentSpanId } = createNewSpan();
+  const { SpanId, ParentSpanId } = createNewSpan();
   
   // Return span context
-  return {
-    trace_id: currentContext.traceId || randomHex(32).toLowerCase(),
-    span_id: spanId,
-    parent_span_id: parentSpanId,
-    trace_flags: currentContext.traceFlags || 1,
-    attributes: {
+  return {//TODO: corregit estoYAAAAAAAA!
+   // trace_id1: currentContext.TraceId || randomHex(32).toLowerCase(),
+   // span_id1: SpanId,
+   // parent_span_id1: ParentSpanId,
+   // trace_flags1: currentContext.TraceFlags || 1,
+    attributes: { //TODO: corregit estoYAAAAAAAA!, este Atributes con mayuscula
       'span.name': name,
       ...attributes
     }
@@ -1146,12 +1392,12 @@ export function createSpanContext(name: string, attributes: Record<string, any> 
  */
 export function getTraceparentHeader(): string {
   const context = getTraceContext();
-  if (!context.traceId || !context.spanId) {
+  if (!context.TraceId || !context.SpanId) {
     return '';
   }
   
   // Format: version-traceId-spanId-flags
-  return `00-${context.traceId}-${context.spanId}-${(context.traceFlags || 1).toString(16).padStart(2, '0')}`;
+  return `00-${context.TraceId}-${context.SpanId}-${(context.TraceFlags || 1).toString(16).padStart(2, '0')}`;
 }
 
 /**
@@ -1163,38 +1409,45 @@ export function toOtelLogRecord(
   message: string | Record<string, any>, 
   attributes: Record<string, any> = {}
 ): OtelLogRecord {
-  const timestamp = DateTime.now().toISO();
+  const timestamp = DateTime.now().setZone(logTimeZone).toISO() || DateTime.now().toLocal().toString();; 
   const traceContext = getTraceContext();
   const resource = getResourceInfo();
   
   // Create base record with trace context
-  const record: OtelLogRecord = {
-    time: timestamp,
-    severity_number: getSeverityNumber(level),
-    severity_text: level,
-    ...traceContext,
-    resource
+  const record: OtelLogRecord = {//TODO: corregit estoYAAAAAAAA!
+
+    Timestamp: timestamp,
+    TraceId: traceContext.TraceId || randomHex(32).toLowerCase(), //TODO: || add this?  "00000000000000000000000000000000" ??? https://www.w3.org/TR/trace-context/#trace-id
+    SpanId: traceContext.SpanId || randomHex(16).toLowerCase(), //TODO: || "0000000000000000" ???
+    TraceFlags: traceContext.TraceFlags || 1,
+    SeverityNumber: getSeverityNumber(level),
+    SeverityText: level,
+   // Body: data, TODO: add or not body?
+    //Attributes: { ...baseContext, ...additionalAttrs }, TODO: add attributes?
+    Resource:resource,
+    //...traceContext
+
   };
   
   // Add body based on message type
   if (typeof message === 'string') {
-    record.body = message;
-    record.attributes = attributes;
+    record.Body = message;
+    record.Attributes = attributes;
   } else if (message && typeof message === 'object') {
     // Check if message has a 'message' property
     if ('message' in message) {
-      record.body = message.message;
+      record.Body = message.message;
       // Remove message property to avoid duplication
       const { message: _, ...rest } = message;
-      record.attributes = { ...rest, ...attributes };
+      record.Attributes = { ...rest, ...attributes };
     } else {
       // Use entire object as body
-      record.body = message;
-      record.attributes = attributes;
+      record.Body = message;
+      record.Attributes = attributes;
     }
   } else {
-    record.body = String(message);
-    record.attributes = attributes;
+    record.Body = String(message);
+    record.Attributes = attributes;
   }
   
   return record;

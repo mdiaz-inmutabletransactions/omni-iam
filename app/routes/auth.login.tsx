@@ -45,9 +45,9 @@ export const loader: LoaderFunction = async ({ request }) => {
       const metrics = logger.child({
         'telemetry.type': 'metric',
         // Use the standardized trace context field names
-        trace_id: traceContext.traceId,
-        span_id: traceContext.spanId,
-        trace_flags: traceContext.traceFlags
+        trace_id: traceContext.TraceId,
+        span_id: traceContext.SpanId,
+        trace_flags: traceContext.TraceFlags
       });
       
       metrics.info({
@@ -119,9 +119,9 @@ export const action: ActionFunction = async ({ request }) => {
       const metrics = logger.child({
         'telemetry.type': 'metric',
         // Use the same trace context
-        trace_id: getTraceContext().traceId,
-        span_id: getTraceContext().spanId,
-        trace_flags: getTraceContext().traceFlags
+        trace_id: getTraceContext().TraceId,
+        span_id: getTraceContext().SpanId,
+        trace_flags: getTraceContext().TraceFlags
       });
       
       metrics.info({
@@ -137,9 +137,9 @@ export const action: ActionFunction = async ({ request }) => {
         'event.domain': 'auth',
         requestId,
         // Use the same trace context
-        trace_id: getTraceContext().traceId,
-        span_id: getTraceContext().spanId,
-        trace_flags: getTraceContext().traceFlags
+        trace_id: getTraceContext().TraceId,
+        span_id: getTraceContext().SpanId,
+        trace_flags: getTraceContext().TraceFlags
       });
       
       // Log event
@@ -184,9 +184,9 @@ export const action: ActionFunction = async ({ request }) => {
       // Track failed logins with consistent trace context
       const metrics = logger.child({
         'telemetry.type': 'metric',
-        trace_id: getTraceContext().traceId,
-        span_id: getTraceContext().spanId,
-        trace_flags: getTraceContext().traceFlags
+        trace_id: getTraceContext().TraceId,
+        span_id: getTraceContext().SpanId,
+        trace_flags: getTraceContext().TraceFlags
       });
       
       metrics.info({
@@ -200,9 +200,9 @@ export const action: ActionFunction = async ({ request }) => {
       const events = logger.child({
         'event.domain': 'auth',
         requestId,
-        trace_id: getTraceContext().traceId,
-        span_id: getTraceContext().spanId,
-        trace_flags: getTraceContext().traceFlags
+        trace_id: getTraceContext().TraceId,
+        span_id: getTraceContext().SpanId,
+        trace_flags: getTraceContext().TraceFlags
       });
       
       events.info({
@@ -238,9 +238,9 @@ export const action: ActionFunction = async ({ request }) => {
     // Track successful logins with consistent trace context
     const metrics = logger.child({
       'telemetry.type': 'metric',
-      trace_id: getTraceContext().traceId,
-      span_id: getTraceContext().spanId,
-      trace_flags: getTraceContext().traceFlags
+      trace_id: getTraceContext().TraceId,
+      span_id: getTraceContext().SpanId,
+      trace_flags: getTraceContext().TraceFlags
     });
     
     metrics.info({
@@ -253,9 +253,9 @@ export const action: ActionFunction = async ({ request }) => {
     const events = logger.child({
       'event.domain': 'auth',
       requestId,
-      trace_id: getTraceContext().traceId,
-      span_id: getTraceContext().spanId,
-      trace_flags: getTraceContext().traceFlags
+      trace_id: getTraceContext().TraceId,
+      span_id: getTraceContext().SpanId,
+      trace_flags: getTraceContext().TraceFlags
     });
     
     events.info({
@@ -294,9 +294,9 @@ export const action: ActionFunction = async ({ request }) => {
     // Track unexpected errors
     const metrics = logger.child({
       'telemetry.type': 'metric',
-      trace_id: getTraceContext().traceId,
-      span_id: getTraceContext().spanId,
-      trace_flags: getTraceContext().traceFlags
+      trace_id: getTraceContext().TraceId,
+      span_id: getTraceContext().SpanId,
+      trace_flags: getTraceContext().TraceFlags
     });
     
     metrics.info({
@@ -310,9 +310,9 @@ export const action: ActionFunction = async ({ request }) => {
     const events = logger.child({
       'event.domain': 'auth',
       requestId,
-      trace_id: getTraceContext().traceId,
-      span_id: getTraceContext().spanId,
-      trace_flags: getTraceContext().traceFlags
+      trace_id: getTraceContext().TraceId,
+      span_id: getTraceContext().SpanId,
+      trace_flags: getTraceContext().TraceFlags
     });
     
     events.info({

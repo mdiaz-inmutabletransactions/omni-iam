@@ -125,6 +125,21 @@ function levelToNumber(level: string): number {
   }
 }
 
+// Helper to convert log level to Pino numeric level
+/*function mapOtelSevery(level: string | number): string | number {
+
+  if (level istypeof string)
+  switch (level.toLowerCase()) {
+    case 'trace': return 10;
+    case 'debug': return 20;
+    case 'info': return 30;
+    case 'warn': return 40;
+    case 'error': return 50;
+    case 'fatal': return 60;
+    default: return 30; // default to info
+  }
+}*/
+
 // Create log directories if needed
 async function ensureLogDirectory(dirPath: string): Promise<void> {
   try {

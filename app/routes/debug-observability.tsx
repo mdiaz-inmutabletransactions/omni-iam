@@ -22,11 +22,11 @@ export const loader = async () => {
   operationLogger.info("Debug page for Observability accessed");
   
   // Add this to debug-observability.tsx loader to verify the configuration
-  logger.info({
+  logger.info("Log configuration debug",{
     logTargets: ViteEnv.LOG_TARGETS.split(','),
     includesFile: ViteEnv.LOG_TARGETS.includes('file'),
-    logFilePath: ViteEnv.LOG_FILE_PATH
-  }, 'Log configuration debug');
+    logFilePath: ViteEnv.LOG_FILE_PATH,
+  });
 
   // Generate some sample logs at different levels
   logger.trace("This is a trace log for testing");

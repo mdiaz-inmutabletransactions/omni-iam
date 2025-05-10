@@ -29,6 +29,7 @@ import {
 
   setTraceContext,
   createNewSpan,
+
 } from './logUtils';
 
 import type { FormatObjectOptions } from './logUtils';
@@ -66,9 +67,9 @@ console.info({
       operation: 'initialization'
     });
     
-    obsLogger.info({
-      msg: "Observability context logger initialized",
-      logLevel: ViteEnv.LOG_LEVEL,
+    obsLogger.info({//TODO: corregit estoYAAAAAAAA!
+      Body: "Observability context logger initialized",
+      SeverityText: ViteEnv.LOG_LEVEL,
       logTargets: ViteEnv.LOG_TARGETS,
       otelEnabled: ViteEnv.OTEL_ENABLED,
       environment: isNodeEnvironment ? 'server' : 'browser'
